@@ -84,8 +84,6 @@ impl fmt::Display for PopError {
 impl std::error::Error for PopError {}
 
 struct Node<T> {
-    /// Wrapped in `ManuallyDrop` so that `pop` can move the value out via
-    /// `ptr::read` without the deferred `defer_destroy` dropping it a second time.
     value: ManuallyDrop<T>,
     next: Atomic<Node<T>>,
 }
@@ -193,8 +191,9 @@ impl<T> ConcurrentShardedStack<T> {
                 guard,
             ) {
                 Ok(_) => {
-                    // bitmap is only a weak hint so it is okay if this races with pop-side clearing.
-                    self.bitmap.fetch_or(bit, Ordering::Release);
+                    if self.bitmap.load(Ordering::Relaxed) & bit == 0 {
+                        self.bitmap.fetch_or(bit, Ordering::Release);
+                    }
                     return Ok(());
                 }
                 Err(err) => {
@@ -353,8 +352,6 @@ mod tests {
     use std::sync::Arc;
     use std::sync::atomic::AtomicUsize;
 
-    /// A payload that bumps a shared counter on drop, used to detect leaks and
-    /// double-drops (the latter is caught by Miri).
     #[derive(Debug)]
     struct DropCounter {
         counter: Arc<AtomicUsize>,

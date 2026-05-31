@@ -1,221 +1,243 @@
-//! Benchmarks modelling realistic usage of `ConcurrentShardedStack`.
+//! Comparative benchmarks for `ConcurrentShardedStack`.
 //!
-//! The scenarios here intentionally avoid micro-benchmarking a single atomic
-//! operation. Instead they measure throughput under contention patterns that
-//! actually occur in production:
+//! Running a data structure in isolation tells you little, so every scenario
+//! here runs the *same* workload against two lock-free implementations:
 //!
-//! * single-threaded LIFO buffering (baseline),
-//! * multi-producer / multi-consumer pipelines,
-//! * a work-stealing style pool where every thread both pushes and pops,
-//! * a comparison against the common `Mutex<Vec<T>>` baseline.
+//! * [`ConcurrentShardedStack`] — this crate,
+//! * [`lockfree::stack::Stack`] — the well-known lock-free stack crate on
+//!   crates.io, the natural apples-to-apples competitor.
+//!
+//! The scenarios model how a concurrent stack is actually used under load:
+//!
+//! * `object_pool` — a fixed pool of objects; every worker repeatedly *acquires*
+//!   (pop) and *releases* (push) one. This is the connection/buffer pool used by
+//!   web servers and thread pools.
+//! * `mpmc` — dedicated producer and consumer threads (fan-out work queue).
+//! * `asymmetric_rw` — a skewed read/write mix (write-heavy and read-heavy),
+//!   since real workloads are rarely a clean 1:1 of pushes and pops.
+//!
+//! All run with thread counts that go well past the core count (up to 256), to
+//! reflect heavily oversubscribed servers rather than a tidy 4-thread demo.
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread;
 
-use concurrent_sharded_stack::{ConcurrentShardedStack, PopError};
+use concurrent_sharded_stack::ConcurrentShardedStack;
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
+use lockfree::stack::Stack as LockFreeStack;
 
-/// Drain helper used by the consumer threads: spin until the stack is empty
-/// (and closed), counting how many items were observed.
-fn drain_until_closed<T>(stack: &ConcurrentShardedStack<T>) -> usize {
-    let mut count = 0;
-    loop {
-        match stack.pop() {
-            Ok(_) => count += 1,
-            Err(PopError::Empty) => thread::yield_now(),
-            Err(PopError::Closed) => break,
-        }
-    }
-    count
+/// Minimal API shared by every implementation under test.
+trait Stackish: Send + Sync {
+    fn push_one(&self, value: usize);
+    fn pop_one(&self) -> Option<usize>;
 }
 
-/// Baseline: a single thread pushing then popping everything (LIFO buffer).
-fn bench_single_thread(c: &mut Criterion) {
-    let mut group = c.benchmark_group("single_thread_push_pop");
-    for &ops in &[1_000usize, 10_000, 100_000] {
-        group.throughput(Throughput::Elements(ops as u64));
-        group.bench_with_input(BenchmarkId::from_parameter(ops), &ops, |b, &ops| {
-            b.iter(|| {
-                let stack = ConcurrentShardedStack::with_concurrency(4);
-                for i in 0..ops {
-                    stack.push(i).unwrap();
-                }
-                let mut sum = 0usize;
-                while let Ok(v) = stack.pop() {
-                    sum = sum.wrapping_add(v);
-                }
-                sum
+impl Stackish for ConcurrentShardedStack<usize> {
+    fn push_one(&self, value: usize) {
+        self.push(value).unwrap();
+    }
+    fn pop_one(&self) -> Option<usize> {
+        self.pop().ok()
+    }
+}
+
+impl Stackish for LockFreeStack<usize> {
+    fn push_one(&self, value: usize) {
+        self.push(value);
+    }
+    fn pop_one(&self) -> Option<usize> {
+        self.pop()
+    }
+}
+
+/// Shards are bounded by `usize::BITS`; cap the hint so high thread counts do
+/// not blow past the limit.
+fn shard_hint(threads: usize) -> usize {
+    threads.next_power_of_two().min(usize::BITS as usize)
+}
+
+/// The two implementations, as factories taking the thread count (the sharded
+/// stack sizes itself from it).
+type Factory = fn(usize) -> Arc<dyn Stackish>;
+
+fn implementations() -> [(&'static str, Factory); 2] {
+    [
+        ("sharded", |threads| {
+            Arc::new(ConcurrentShardedStack::with_concurrency(shard_hint(
+                threads,
+            )))
+        }),
+        ("lockfree", |_| Arc::new(LockFreeStack::new())),
+    ]
+}
+
+/// Oversubscribed thread counts: from one-per-core up to 256 (web-server /
+/// thread-pool territory, far beyond physical parallelism).
+const THREAD_COUNTS: [usize; 4] = [8, 32, 64, 256];
+const OPS_PER_THREAD: usize = 20_000;
+
+/// Object-pool workload: pre-fill a pool sized to the thread count, then have
+/// every worker repeatedly acquire (pop) and release (push) an object. Models a
+/// connection pool / buffer pool shared across many request handlers.
+fn bench_object_pool(c: &mut Criterion) {
+    let mut group = c.benchmark_group("object_pool");
+    // Each worker holds at most one object at a time; size the pool so there is
+    // contention but pops usually succeed.
+    let pool_per_thread = 4;
+
+    for &threads in &THREAD_COUNTS {
+        group.throughput(Throughput::Elements((threads * OPS_PER_THREAD) as u64));
+
+        for (name, factory) in implementations() {
+            let id = BenchmarkId::new(name, threads);
+            group.bench_with_input(id, &threads, |b, &threads| {
+                b.iter(|| {
+                    let pool = factory(threads);
+                    for i in 0..threads * pool_per_thread {
+                        pool.push_one(i);
+                    }
+
+                    let mut handles = Vec::new();
+                    for _ in 0..threads {
+                        let pool = Arc::clone(&pool);
+                        handles.push(thread::spawn(move || {
+                            let mut serviced = 0usize;
+                            for _ in 0..OPS_PER_THREAD {
+                                // Acquire; if the pool is momentarily empty, just
+                                // release a fresh object (pool grows slightly).
+                                let obj = pool.pop_one().unwrap_or(0);
+                                pool.push_one(obj);
+                                serviced += 1;
+                            }
+                            serviced
+                        }));
+                    }
+
+                    let mut total = 0usize;
+                    for h in handles {
+                        total += h.join().unwrap();
+                    }
+                    total
+                });
             });
-        });
+        }
     }
     group.finish();
 }
 
-/// Multi-producer / multi-consumer pipeline: half the threads push, the other
-/// half drain. Models a fan-out work queue.
+/// Dedicated producers fan items out; dedicated consumers drain them. Consumers
+/// stop once the global popped count reaches everything the producers pushed.
 fn bench_mpmc(c: &mut Criterion) {
-    let mut group = c.benchmark_group("mpmc_pipeline");
-    let per_thread = 50_000usize;
+    let mut group = c.benchmark_group("mpmc");
 
-    for &threads in &[2usize, 4, 8] {
-        let producers = threads;
-        let consumers = threads;
-        let total = (producers * per_thread) as u64;
-        group.throughput(Throughput::Elements(total));
-        group.bench_with_input(
-            BenchmarkId::from_parameter(format!("{producers}p{consumers}c")),
-            &threads,
-            |b, _| {
+    for &threads in &THREAD_COUNTS {
+        let produced = threads * OPS_PER_THREAD;
+        group.throughput(Throughput::Elements(produced as u64));
+
+        for (name, factory) in implementations() {
+            let id = BenchmarkId::new(name, threads);
+            group.bench_with_input(id, &threads, |b, &threads| {
                 b.iter(|| {
-                    let stack = Arc::new(ConcurrentShardedStack::with_concurrency(
-                        threads.next_power_of_two(),
-                    ));
+                    let stack = factory(threads);
+                    let popped_total = Arc::new(AtomicUsize::new(0));
 
-                    let mut handles = Vec::new();
-                    for _ in 0..producers {
+                    let mut producers = Vec::new();
+                    for _ in 0..threads {
                         let stack = Arc::clone(&stack);
-                        handles.push(thread::spawn(move || {
-                            for i in 0..per_thread {
-                                stack.push(i).unwrap();
+                        producers.push(thread::spawn(move || {
+                            for i in 0..OPS_PER_THREAD {
+                                stack.push_one(i);
                             }
                         }));
                     }
 
-                    let mut consumer_handles = Vec::new();
-                    for _ in 0..consumers {
+                    let mut consumers = Vec::new();
+                    for _ in 0..threads {
                         let stack = Arc::clone(&stack);
-                        consumer_handles.push(thread::spawn(move || drain_until_closed(&stack)));
-                    }
-
-                    for h in handles {
-                        h.join().unwrap();
-                    }
-                    stack.close();
-
-                    let mut drained = 0usize;
-                    for h in consumer_handles {
-                        drained += h.join().unwrap();
-                    }
-                    drained
-                });
-            },
-        );
-    }
-    group.finish();
-}
-
-/// Work-stealing style pool: every thread alternates pushing and popping,
-/// mimicking a task scheduler where workers both spawn and execute tasks.
-fn bench_work_stealing(c: &mut Criterion) {
-    let mut group = c.benchmark_group("work_stealing_mixed");
-    let ops_per_thread = 50_000usize;
-
-    for &threads in &[2usize, 4, 8] {
-        group.throughput(Throughput::Elements((threads * ops_per_thread) as u64));
-        group.bench_with_input(BenchmarkId::from_parameter(threads), &threads, |b, _| {
-            b.iter(|| {
-                let stack = Arc::new(ConcurrentShardedStack::with_concurrency(
-                    threads.next_power_of_two(),
-                ));
-
-                // Seed each shard so pops have something to take early on.
-                for i in 0..threads {
-                    stack.push(i).unwrap();
-                }
-
-                let mut handles = Vec::new();
-                for t in 0..threads {
-                    let stack = Arc::clone(&stack);
-                    handles.push(thread::spawn(move || {
-                        let mut popped = 0usize;
-                        for i in 0..ops_per_thread {
-                            if (t + i) & 1 == 0 {
-                                stack.push(i).unwrap();
-                            } else if stack.pop().is_ok() {
-                                popped += 1;
-                            }
-                        }
-                        popped
-                    }));
-                }
-
-                let mut total = 0usize;
-                for h in handles {
-                    total += h.join().unwrap();
-                }
-                total
-            });
-        });
-    }
-    group.finish();
-}
-
-/// Comparison baseline: the same MPMC workload backed by a `Mutex<Vec<T>>`.
-fn bench_mutex_vec_baseline(c: &mut Criterion) {
-    let mut group = c.benchmark_group("mutex_vec_baseline_mpmc");
-    let per_thread = 50_000usize;
-
-    for &threads in &[2usize, 4, 8] {
-        let total = (threads * per_thread) as u64;
-        group.throughput(Throughput::Elements(total));
-        group.bench_with_input(BenchmarkId::from_parameter(threads), &threads, |b, _| {
-            b.iter(|| {
-                let stack = Arc::new(Mutex::new(Vec::<usize>::new()));
-                let done = Arc::new(std::sync::atomic::AtomicBool::new(false));
-
-                let mut handles = Vec::new();
-                for _ in 0..threads {
-                    let stack = Arc::clone(&stack);
-                    handles.push(thread::spawn(move || {
-                        for i in 0..per_thread {
-                            stack.lock().unwrap().push(i);
-                        }
-                    }));
-                }
-
-                let mut consumers = Vec::new();
-                for _ in 0..threads {
-                    let stack = Arc::clone(&stack);
-                    let done = Arc::clone(&done);
-                    consumers.push(thread::spawn(move || {
-                        let mut count = 0usize;
-                        loop {
-                            let popped = stack.lock().unwrap().pop();
-                            match popped {
-                                Some(_) => count += 1,
-                                None => {
-                                    if done.load(std::sync::atomic::Ordering::Acquire) {
-                                        break;
-                                    }
+                        let popped_total = Arc::clone(&popped_total);
+                        consumers.push(thread::spawn(move || {
+                            while popped_total.load(Ordering::Relaxed) < produced {
+                                if stack.pop_one().is_some() {
+                                    popped_total.fetch_add(1, Ordering::Relaxed);
+                                } else {
                                     thread::yield_now();
                                 }
                             }
-                        }
-                        count
-                    }));
-                }
+                        }));
+                    }
 
-                for h in handles {
-                    h.join().unwrap();
-                }
-                done.store(true, std::sync::atomic::Ordering::Release);
-
-                let mut drained = 0usize;
-                for h in consumers {
-                    drained += h.join().unwrap();
-                }
-                drained
+                    for h in producers {
+                        h.join().unwrap();
+                    }
+                    for h in consumers {
+                        h.join().unwrap();
+                    }
+                    popped_total.load(Ordering::Relaxed)
+                });
             });
-        });
+        }
     }
     group.finish();
 }
 
-criterion_group!(
-    benches,
-    bench_single_thread,
-    bench_mpmc,
-    bench_work_stealing,
-    bench_mutex_vec_baseline
-);
+/// Skewed read/write workload. Each thread runs a fixed op mix where pushes and
+/// pops are *not* balanced: `write_heavy` does 4 pushes per pop, `read_heavy`
+/// does 4 pops per push. Pops that find the stack empty are counted as misses,
+/// which is itself representative of a read-heavy consumer.
+fn bench_asymmetric_rw(c: &mut Criterion) {
+    let mut group = c.benchmark_group("asymmetric_rw");
+
+    // (label, `true` => the 1-in-5 op is a pop; `false` => it is a push).
+    let regimes: [(&str, bool); 2] = [("write_heavy", true), ("read_heavy", false)];
+
+    for (regime, minority_is_pop) in regimes {
+        for &threads in &THREAD_COUNTS {
+            group.throughput(Throughput::Elements((threads * OPS_PER_THREAD) as u64));
+
+            for (name, factory) in implementations() {
+                let id = BenchmarkId::new(format!("{regime}/{name}"), threads);
+                group.bench_with_input(id, &threads, |b, &threads| {
+                    b.iter(|| {
+                        let stack = factory(threads);
+                        // Seed so read-heavy runs have something to take early.
+                        for i in 0..threads * 8 {
+                            stack.push_one(i);
+                        }
+
+                        let mut handles = Vec::new();
+                        for _ in 0..threads {
+                            let stack = Arc::clone(&stack);
+                            handles.push(thread::spawn(move || {
+                                let mut hits = 0usize;
+                                for i in 0..OPS_PER_THREAD {
+                                    // 1 in every 5 ops is the "minority" op.
+                                    let minority = i % 5 == 0;
+                                    let do_pop = minority == minority_is_pop;
+                                    if do_pop {
+                                        if stack.pop_one().is_some() {
+                                            hits += 1;
+                                        }
+                                    } else {
+                                        stack.push_one(i);
+                                    }
+                                }
+                                hits
+                            }));
+                        }
+
+                        let mut total = 0usize;
+                        for h in handles {
+                            total += h.join().unwrap();
+                        }
+                        total
+                    });
+                });
+            }
+        }
+    }
+    group.finish();
+}
+
+criterion_group!(benches, bench_object_pool, bench_mpmc, bench_asymmetric_rw);
 criterion_main!(benches);

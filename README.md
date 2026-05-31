@@ -71,12 +71,29 @@ non-`Copy` payloads.
 
 ## Benchmarks
 
-Realistic-scenario benchmarks (single-thread buffering, MPMC pipeline,
-work-stealing, and a `Mutex<Vec>` baseline) live in `benches/`:
+The benchmarks in `benches/` compare **three implementations on the same
+workload**:
+
+- this crate's `ConcurrentShardedStack`,
+- [`lockfree::stack::Stack`](https://crates.io/crates/lockfree) — a popular
+  single lock-free stack on crates.io,
+- a `Mutex<Vec<T>>` baseline.
+
+Two workloads model real usage under heavily oversubscribed thread counts
+(8 → 256 threads, i.e. far past the core count, as in web servers and thread
+pools):
+
+- `object_pool` — a fixed pool where every worker repeatedly acquires (pop) and
+  releases (push) an object (connection/buffer pool pattern).
+- `mpmc` — dedicated producer and consumer threads (fan-out work queue).
 
 ```sh
 cargo bench
 ```
+
+Sharding keeps throughput roughly flat as threads pile up, whereas a single
+lock-free stack degrades under CAS contention — that gap is the whole point of
+the crate.
 
 ## License
 
