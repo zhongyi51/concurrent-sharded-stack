@@ -1,0 +1,23 @@
+[package]
+name = "concurrent-sharded-stack"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "A lock-free concurrent stack that shards a Treiber stack per thread and reclaims memory with epoch-based GC."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/zhongyi51/concurrent-sharded-stack"
+readme = "README.md"
+keywords = ["concurrent", "lock-free", "stack", "sharded", "treiber"]
+categories = ["concurrency", "data-structures"]
+publish = ["crates-io"]
+
+[dependencies]
+crossbeam-epoch = "0.9"
+crossbeam-utils = "0.8"
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "stack_bench"
+harness = false

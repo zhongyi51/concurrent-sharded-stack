@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --all-targets --verbose
+      - name: Test
+        run: cargo test --all-targets --verbose
+      - name: Doc tests
+        run: cargo test --doc --verbose
+
+  fmt:
+    name: Rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --all-targets -- -D warnings
+
+  docs:
+    name: Doc build
+    runs-on: ubuntu-latest
+    env:
+      RUSTDOCFLAGS: -D warnings
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo doc --no-deps --all-features
+
+  miri:
+    name: Miri
+    runs-on: ubuntu-latest
+    env:
+      # crossbeam-epoch's internals trip the default Stacked Borrows model, so
+      # run Miri under the Tree Borrows aliasing model instead. Epoch-based
+      # reclamation legitimately leaves deferred garbage uncollected at process
+      # exit, so leak checking is disabled (this is not a bug in our code).
+      MIRIFLAGS: -Zmiri-tree-borrows -Zmiri-permissive-provenance -Zmiri-disable-isolation -Zmiri-ignore-leaks
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install nightly + Miri
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri
+      - uses: Swatinem/rust-cache@v2
+      - name: Run Miri
+        run: cargo miri test
