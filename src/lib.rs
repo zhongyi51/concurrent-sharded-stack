@@ -27,10 +27,12 @@ use std::fmt;
 use std::hint::spin_loop;
 use std::mem::ManuallyDrop;
 use std::ptr;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread;
 
 static NEXT_THREAD_ID: AtomicUsize = AtomicUsize::new(0);
+const CLOSED_TAG: usize = 1;
+const CURRENT_SHARD_POP_ATTEMPTS: usize = 3;
 
 thread_local! {
     static THREAD_ID: Cell<usize> = Cell::new(
@@ -106,8 +108,6 @@ pub struct ConcurrentShardedStack<T> {
     bitmap: AtomicUsize,
 
     shard_index_mask: usize,
-
-    closed: AtomicBool,
 }
 
 unsafe impl<T: Send> Send for ConcurrentShardedStack<T> {}
@@ -159,7 +159,6 @@ impl<T> ConcurrentShardedStack<T> {
             shards: shards.into_boxed_slice(),
             bitmap: AtomicUsize::new(0),
             shard_index_mask: shard_count - 1,
-            closed: AtomicBool::new(false),
         }
     }
 
@@ -167,10 +166,6 @@ impl<T> ConcurrentShardedStack<T> {
     ///
     /// Returns `Err(PushError::Closed(value))` if the stack is already closed.
     pub fn push(&self, value: T) -> Result<(), PushError<T>> {
-        if self.closed.load(Ordering::Acquire) {
-            return Err(PushError::Closed(value));
-        }
-
         let shard_index = self.current_shard_index();
         let shard = &self.shards[shard_index];
         let bit = 1usize << shard_index;
@@ -180,6 +175,12 @@ impl<T> ConcurrentShardedStack<T> {
 
         loop {
             let head = shard.load(Ordering::Acquire, guard);
+
+            if head.tag() == CLOSED_TAG {
+                let node = node.into_box();
+                let value = unsafe { ptr::read(&*node.value) };
+                return Err(PushError::Closed(value));
+            }
 
             node.next.store(head, Ordering::Relaxed);
 
@@ -214,9 +215,13 @@ impl<T> ConcurrentShardedStack<T> {
         let start = self.current_shard_index();
         let shard_count = self.shards.len();
 
-        // 1. Current shard first.
-        if let Some(value) = self.try_pop_from_shard(start, guard) {
-            return Ok(value);
+        // 1. Current shard first, but do not spin here indefinitely under contention.
+        for _ in 0..CURRENT_SHARD_POP_ATTEMPTS {
+            match self.try_pop_from_shard(start, guard) {
+                PopAttempt::Value(value) => return Ok(value),
+                PopAttempt::Empty | PopAttempt::Closed => {}
+                PopAttempt::Retry => spin_loop(),
+            }
         }
 
         // 2. Bitmap-guided search.
@@ -226,26 +231,27 @@ impl<T> ConcurrentShardedStack<T> {
             for offset in 1..shard_count {
                 let index = (start + offset) & self.shard_index_mask;
 
-                if bits & 1usize << index == 0 {
+                if bits & Self::shard_bit(index) == 0 {
                     continue;
                 }
 
-                if let Some(value) = self.try_pop_from_shard(index, guard) {
+                if let Some(value) = self.pop_from_shard(index, guard) {
                     return Ok(value);
                 }
             }
         }
 
-        // 3. Fallback.
-        for offset in 1..=shard_count {
-            let index = (start + offset) & self.shard_index_mask;
+        if self.all_shards_closed(guard) {
+            // 3. Full scan only after close is confirmed, because no future push can
+            // make an empty closed shard non-empty again.
+            for offset in 1..=shard_count {
+                let index = (start + offset) & self.shard_index_mask;
 
-            if let Some(value) = self.try_pop_from_shard(index, guard) {
-                return Ok(value);
+                if let Some(value) = self.pop_from_shard(index, guard) {
+                    return Ok(value);
+                }
             }
-        }
 
-        if self.closed.load(Ordering::Acquire) {
             Err(PopError::Closed)
         } else {
             Err(PopError::Empty)
@@ -254,14 +260,40 @@ impl<T> ConcurrentShardedStack<T> {
 
     /// Closes the stack, existing elements can still be popped.
     pub fn close(&self) -> bool {
-        self.closed
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .is_ok()
+        let guard = &epoch::pin();
+        let mut changed = false;
+
+        for shard in self.shards.iter() {
+            loop {
+                let head = shard.load(Ordering::Acquire, guard);
+
+                if head.tag() == CLOSED_TAG {
+                    break;
+                }
+
+                match shard.compare_exchange_weak(
+                    head,
+                    head.with_tag(CLOSED_TAG),
+                    Ordering::AcqRel,
+                    Ordering::Acquire,
+                    guard,
+                ) {
+                    Ok(_) => {
+                        changed = true;
+                        break;
+                    }
+                    Err(_) => spin_loop(),
+                }
+            }
+        }
+
+        changed
     }
 
     /// Checks if the stack is closed.
     pub fn is_closed(&self) -> bool {
-        self.closed.load(Ordering::Acquire)
+        let guard = &epoch::pin();
+        self.all_shards_closed(guard)
     }
 
     pub fn shard_count(&self) -> usize {
@@ -272,53 +304,79 @@ impl<T> ConcurrentShardedStack<T> {
         current_thread_id() & self.shard_index_mask
     }
 
-    fn try_pop_from_shard(&self, index: usize, guard: &Guard) -> Option<T> {
-        let shard = &self.shards[index];
-        let b = 1usize << index;
+    fn shard_bit(index: usize) -> usize {
+        1usize << index
+    }
 
+    fn pop_from_shard(&self, index: usize, guard: &Guard) -> Option<T> {
         loop {
-            let head = shard.load(Ordering::Acquire, guard);
-
-            if head.is_null() {
-                // Weak hint clearing.
-                self.bitmap.fetch_and(!b, Ordering::AcqRel);
-                return None;
-            }
-
-            let head_ref = unsafe { head.deref() };
-            let next = head_ref.next.load(Ordering::Acquire, guard);
-
-            match shard.compare_exchange_weak(
-                head,
-                next,
-                Ordering::AcqRel,
-                Ordering::Acquire,
-                guard,
-            ) {
-                Ok(_) => {
-                    if next.is_null() {
-                        // Weak hint clearing.
-                        self.bitmap.fetch_and(!b, Ordering::AcqRel);
-                    }
-
-                    // Move the value out of the popped node. The node itself is
-                    // reclaimed later by the epoch GC; because `value` is a
-                    // `ManuallyDrop<T>`, that deferred destruction will not drop
-                    // it again.
-                    let value = unsafe { ptr::read(&*head_ref.value) };
-
-                    unsafe {
-                        guard.defer_destroy(head);
-                    }
-
-                    return Some(value);
-                }
-                Err(_) => {
-                    spin_loop();
-                }
+            match self.try_pop_from_shard(index, guard) {
+                PopAttempt::Value(value) => return Some(value),
+                PopAttempt::Empty | PopAttempt::Closed => return None,
+                PopAttempt::Retry => spin_loop(),
             }
         }
     }
+
+    fn try_pop_from_shard(&self, index: usize, guard: &Guard) -> PopAttempt<T> {
+        let shard = &self.shards[index];
+        let bit = Self::shard_bit(index);
+
+        let head = shard.load(Ordering::Acquire, guard);
+        let tag = head.tag();
+
+        if head.is_null() {
+            self.clear_bitmap_bit_if_set(bit);
+            return if tag == CLOSED_TAG {
+                PopAttempt::Closed
+            } else {
+                PopAttempt::Empty
+            };
+        }
+
+        let head_ref = unsafe { head.deref() };
+        let next = head_ref.next.load(Ordering::Acquire, guard).with_tag(tag);
+
+        match shard.compare_exchange_weak(head, next, Ordering::AcqRel, Ordering::Acquire, guard) {
+            Ok(_) => {
+                if next.is_null() {
+                    self.clear_bitmap_bit_if_set(bit);
+                }
+
+                // Move the value out of the popped node. The node itself is
+                // reclaimed later by the epoch GC; because `value` is a
+                // `ManuallyDrop<T>`, that deferred destruction will not drop
+                // it again.
+                let value = unsafe { ptr::read(&*head_ref.value) };
+
+                unsafe {
+                    guard.defer_destroy(head.with_tag(0));
+                }
+
+                PopAttempt::Value(value)
+            }
+            Err(_) => PopAttempt::Retry,
+        }
+    }
+
+    fn clear_bitmap_bit_if_set(&self, bit: usize) {
+        if self.bitmap.load(Ordering::Relaxed) & bit != 0 {
+            self.bitmap.fetch_and(!bit, Ordering::AcqRel);
+        }
+    }
+
+    fn all_shards_closed(&self, guard: &Guard) -> bool {
+        self.shards
+            .iter()
+            .all(|shard| shard.load(Ordering::Acquire, guard).tag() == CLOSED_TAG)
+    }
+}
+
+enum PopAttempt<T> {
+    Value(T),
+    Empty,
+    Closed,
+    Retry,
 }
 
 impl<T> Drop for ConcurrentShardedStack<T> {
