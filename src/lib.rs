@@ -326,8 +326,7 @@ impl<T> ConcurrentShardedStack<T> {
     ///
     /// * `Ok(Some(value))` — popped a value.
     /// * `Ok(None)`        — shard is empty (whether open or closed).
-    /// * `Err(())`         — CAS lost to another thread; caller decides
-    ///                       whether to retry or move on.
+    /// * `Err(())`         — CAS lost to another thread; caller decides whether to retry or move on.
     ///
     /// Both the "empty on arrival" branch and the "last element popped"
     /// branch funnel through [`Self::maybe_clear_bit`], which handles the
@@ -446,8 +445,8 @@ impl<T> Drop for ConcurrentShardedStack<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicBool, AtomicUsize};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, AtomicUsize};
     use std::time::{Duration, Instant};
 
     #[derive(Debug)]
@@ -816,13 +815,15 @@ mod tests {
             for _ in 0..n_poppers {
                 let s = Arc::clone(&s);
                 let popped = Arc::clone(&popped);
-                handles.push(std::thread::spawn(move || loop {
-                    match s.pop() {
-                        Ok(_) => {
-                            popped.fetch_add(1, Ordering::Relaxed);
+                handles.push(std::thread::spawn(move || {
+                    loop {
+                        match s.pop() {
+                            Ok(_) => {
+                                popped.fetch_add(1, Ordering::Relaxed);
+                            }
+                            Err(PopError::Empty) => std::hint::spin_loop(),
+                            Err(PopError::Closed) => break,
                         }
-                        Err(PopError::Empty) => std::hint::spin_loop(),
-                        Err(PopError::Closed) => break,
                     }
                 }));
             }

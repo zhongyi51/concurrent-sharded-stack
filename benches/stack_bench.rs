@@ -26,13 +26,13 @@
 //! All run with thread counts that go well past the core count (up to 256), to
 //! reflect heavily oversubscribed servers rather than a tidy 4-thread demo.
 
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use concurrent_sharded_stack::ConcurrentShardedStack;
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use lockfree::stack::Stack as LockFreeStack;
 
 /// Minimal API shared by every implementation under test.
