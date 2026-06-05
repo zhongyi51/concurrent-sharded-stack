@@ -22,3 +22,16 @@ lockfree = "0.5"
 [[bench]]
 name = "stack_bench"
 harness = false
+
+[[example]]
+name = "profile_mpmc"
+path = "examples/profile_mpmc.rs"
+
+# Profiling-friendly release build: keep full debuginfo so VTune (or any other
+# sampling profiler) can resolve symbols and inline frames, without disabling
+# any optimisation. This applies to `cargo build --release` and
+# `cargo run --release --example ...`.
+[profile.release]
+debug = "full"
+split-debuginfo = "packed"
+strip = "none"
