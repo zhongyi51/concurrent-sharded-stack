@@ -351,13 +351,11 @@ impl<T> ConcurrentShardedStack<T> {
         let next = head_ref.next.load(Ordering::Relaxed, guard);
         let new_head = next.with_tag(head.tag());
 
-        match shard.compare_exchange_weak(
-            head,
-            new_head,
-            Ordering::AcqRel,
-            Ordering::Relaxed,
-            guard,
-        ) {
+        // Strong CAS: weak's spurious failures would burn the bounded retry
+        // budget in Phase 1/2 and leak a spurious `Empty` to the caller.
+        // On x86 strong compiles to the same `lock cmpxchg` as weak; on
+        // LL/SC the strong variant does the inner retry itself.
+        match shard.compare_exchange(head, new_head, Ordering::AcqRel, Ordering::Relaxed, guard) {
             Ok(_) => {
                 if next.is_null() {
                     self.maybe_clear_bit(shard, bit, guard);
@@ -445,8 +443,8 @@ impl<T> Drop for ConcurrentShardedStack<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, AtomicUsize};
+    use std::sync::Arc;
     use std::time::{Duration, Instant};
 
     #[derive(Debug)]
@@ -722,6 +720,14 @@ mod tests {
     /// stealers in Phase 2 skip it, and the element is invisible until the
     /// stack is closed. The test asserts every pushed element is observed by
     /// some popper within a generous timeout; otherwise it fails loudly.
+    ///
+    /// Skipped under Miri: this is a hardware-race stress test (busy-spin
+    /// poppers, no `close()`, watchdog measured in wall-clock seconds), and
+    /// Miri's deterministic cooperative scheduler neither exposes the race
+    /// window this is designed to catch nor finishes the workload in any
+    /// reasonable wall-clock budget. UB and data-race coverage for this
+    /// shape is handled by `no_element_loss_after_close_asymmetric`.
+    #[cfg_attr(miri, ignore)]
     #[test]
     fn no_element_loss_open_asymmetric() {
         // Miri is too slow to hit this race repeatedly; keep workload tiny.
@@ -815,15 +821,13 @@ mod tests {
             for _ in 0..n_poppers {
                 let s = Arc::clone(&s);
                 let popped = Arc::clone(&popped);
-                handles.push(std::thread::spawn(move || {
-                    loop {
-                        match s.pop() {
-                            Ok(_) => {
-                                popped.fetch_add(1, Ordering::Relaxed);
-                            }
-                            Err(PopError::Empty) => std::hint::spin_loop(),
-                            Err(PopError::Closed) => break,
+                handles.push(std::thread::spawn(move || loop {
+                    match s.pop() {
+                        Ok(_) => {
+                            popped.fetch_add(1, Ordering::Relaxed);
                         }
+                        Err(PopError::Empty) => std::hint::spin_loop(),
+                        Err(PopError::Closed) => break,
                     }
                 }));
             }
