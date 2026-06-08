@@ -106,8 +106,9 @@ impl<T> Node<T> {
 pub struct ConcurrentShardedStack<T> {
     shards: Box<[CachePadded<Atomic<Node<T>>>]>,
 
-    /// Bitmap for hinting.
-    /// Both `1` and `0` are just meaning that there may be or may not be an element in the corresponding shard.
+    /// Per-shard non-empty hint. A set bit means the shard *may* contain
+    /// elements; a clear bit means it *may* be empty. All bitmap accesses
+    /// use `Relaxed` ordering — correctness does not depend on the hint.
     bitmap: AtomicUsize,
 
     shard_index_mask: usize,
@@ -201,7 +202,7 @@ impl<T> ConcurrentShardedStack<T> {
                     if head.is_null() {
                         let bit = Self::shard_bit(shard_index);
                         if self.bitmap.load(Ordering::Relaxed) & bit == 0 {
-                            self.bitmap.fetch_or(bit, Ordering::Release);
+                            self.bitmap.fetch_or(bit, Ordering::Relaxed);
                         }
                     }
                     return Ok(());
@@ -237,7 +238,7 @@ impl<T> ConcurrentShardedStack<T> {
         // 2. Bitmap-guided steal via trailing_zeros — O(popcount) over set
         // bits instead of O(shard_count). Exclude the local shard we already
         // tried in Phase 1.
-        let mut bits = self.bitmap.load(Ordering::Acquire) & !Self::shard_bit(start);
+        let mut bits = self.bitmap.load(Ordering::Relaxed) & !Self::shard_bit(start);
         while bits != 0 {
             let index = bits.trailing_zeros() as usize;
             bits &= bits - 1;
@@ -251,10 +252,9 @@ impl<T> ConcurrentShardedStack<T> {
         }
 
         // 3. Only once the stack is confirmed closed do we do a full,
-        // bitmap-agnostic drain. Doing this while the stack is still open
-        // would race with concurrent pushes whose bitmap bit hasn't
-        // propagated yet, and we'd risk wrongly reporting Empty for
-        // elements that are actually in flight.
+        // bitmap-agnostic drain. The bitmap is a relaxed hint and may lag
+        // behind the shard heads, so an open-stack full scan could report
+        // `Empty` for elements still in flight.
         if self.all_shards_closed(guard) {
             for offset in 0..shard_count {
                 let index = (start + offset) & self.shard_index_mask;
@@ -402,9 +402,9 @@ impl<T> ConcurrentShardedStack<T> {
         if self.bitmap.load(Ordering::Relaxed) & bit == 0 {
             return;
         }
-        self.bitmap.fetch_and(!bit, Ordering::Release);
+        self.bitmap.fetch_and(!bit, Ordering::Relaxed);
         if !shard.load(Ordering::Acquire, guard).is_null() {
-            self.bitmap.fetch_or(bit, Ordering::Release);
+            self.bitmap.fetch_or(bit, Ordering::Relaxed);
         }
     }
 
