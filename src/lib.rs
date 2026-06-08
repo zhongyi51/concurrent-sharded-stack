@@ -238,7 +238,8 @@ impl<T> ConcurrentShardedStack<T> {
         // 2. Bitmap-guided steal via trailing_zeros — O(popcount) over set
         // bits instead of O(shard_count). Exclude the local shard we already
         // tried in Phase 1.
-        let mut bits = self.bitmap.load(Ordering::Relaxed) & !Self::shard_bit(start);
+        let local_bit = Self::shard_bit(start);
+        let mut bits = self.bitmap.load(Ordering::Relaxed) & !local_bit;
         while bits != 0 {
             let index = bits.trailing_zeros() as usize;
             bits &= bits - 1;
@@ -251,21 +252,23 @@ impl<T> ConcurrentShardedStack<T> {
             }
         }
 
-        // 3. Only once the stack is confirmed closed do we do a full,
-        // bitmap-agnostic drain. The bitmap is a relaxed hint and may lag
-        // behind the shard heads, so an open-stack full scan could report
-        // `Empty` for elements still in flight.
-        if self.all_shards_closed(guard) {
-            for offset in 0..shard_count {
-                let index = (start + offset) & self.shard_index_mask;
-                loop {
-                    match self.pop_one(index, guard) {
-                        Ok(Some(value)) => return Ok(value),
-                        Ok(None) => break,
-                        Err(()) => spin_loop(),
-                    }
+        // 3. Bitmap-agnostic full scan. The relaxed bitmap hint can lag or
+        // lie (stuck-at-0 after a race with `maybe_clear_bit`), leaving
+        // elements invisible to Phase 2 — observed as element loss on macOS
+        // under contention. A linear shard walk is the correctness backstop;
+        // we only report `Empty`/`Closed` after every shard has been tried.
+        let is_closed = self.all_shards_closed(guard);
+        for offset in 0..shard_count {
+            let index = (start + offset) & self.shard_index_mask;
+            loop {
+                match self.pop_one(index, guard) {
+                    Ok(Some(value)) => return Ok(value),
+                    Ok(None) => break,
+                    Err(()) => spin_loop(),
                 }
             }
+        }
+        if is_closed {
             Err(PopError::Closed)
         } else {
             Err(PopError::Empty)
