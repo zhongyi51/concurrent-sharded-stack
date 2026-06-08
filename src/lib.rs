@@ -106,8 +106,9 @@ impl<T> Node<T> {
 pub struct ConcurrentShardedStack<T> {
     shards: Box<[CachePadded<Atomic<Node<T>>>]>,
 
-    /// Bitmap for hinting.
-    /// Both `1` and `0` are just meaning that there may be or may not be an element in the corresponding shard.
+    /// Per-shard non-empty hint. A set bit means the shard *may* contain
+    /// elements; a clear bit means it *may* be empty. All bitmap accesses
+    /// use `Relaxed` ordering — correctness does not depend on the hint.
     bitmap: AtomicUsize,
 
     shard_index_mask: usize,
@@ -200,7 +201,9 @@ impl<T> ConcurrentShardedStack<T> {
                     // so we don't need to read or write the bitmap at all.
                     if head.is_null() {
                         let bit = Self::shard_bit(shard_index);
-                        self.bitmap.fetch_or(bit, Ordering::Release);
+                        if self.bitmap.load(Ordering::Relaxed) & bit == 0 {
+                            self.bitmap.fetch_or(bit, Ordering::Relaxed);
+                        }
                     }
                     return Ok(());
                 }
@@ -232,15 +235,14 @@ impl<T> ConcurrentShardedStack<T> {
             }
         }
 
-        // 2. Bitmap-guided steal. Each candidate shard gets the same
-        // 3-attempt budget as the local one — a single shot would give
-        // up too easily under contention.
-        let bits = self.bitmap.load(Ordering::Acquire);
-        for offset in 1..shard_count {
-            let index = (start + offset) & self.shard_index_mask;
-            if bits & Self::shard_bit(index) == 0 {
-                continue;
-            }
+        // 2. Bitmap-guided steal via trailing_zeros — O(popcount) over set
+        // bits instead of O(shard_count). Exclude the local shard we already
+        // tried in Phase 1.
+        let local_bit = Self::shard_bit(start);
+        let mut bits = self.bitmap.load(Ordering::Relaxed) & !local_bit;
+        while bits != 0 {
+            let index = bits.trailing_zeros() as usize;
+            bits &= bits - 1;
             for _ in 0..CURRENT_SHARD_CAS_RETRIES {
                 match self.pop_one(index, guard) {
                     Ok(Some(value)) => return Ok(value),
@@ -250,22 +252,23 @@ impl<T> ConcurrentShardedStack<T> {
             }
         }
 
-        // 3. Only once the stack is confirmed closed do we do a full,
-        // bitmap-agnostic drain. Doing this while the stack is still open
-        // would race with concurrent pushes whose bitmap bit hasn't
-        // propagated yet, and we'd risk wrongly reporting Empty for
-        // elements that are actually in flight.
-        if self.all_shards_closed(guard) {
-            for offset in 0..shard_count {
-                let index = (start + offset) & self.shard_index_mask;
-                loop {
-                    match self.pop_one(index, guard) {
-                        Ok(Some(value)) => return Ok(value),
-                        Ok(None) => break,
-                        Err(()) => spin_loop(),
-                    }
+        // 3. Bitmap-agnostic full scan. The relaxed bitmap hint can lag or
+        // lie (stuck-at-0 after a race with `maybe_clear_bit`), leaving
+        // elements invisible to Phase 2 — observed as element loss on macOS
+        // under contention. A linear shard walk is the correctness backstop;
+        // we only report `Empty`/`Closed` after every shard has been tried.
+        let is_closed = self.all_shards_closed(guard);
+        for offset in 0..shard_count {
+            let index = (start + offset) & self.shard_index_mask;
+            loop {
+                match self.pop_one(index, guard) {
+                    Ok(Some(value)) => return Ok(value),
+                    Ok(None) => break,
+                    Err(()) => spin_loop(),
                 }
             }
+        }
+        if is_closed {
             Err(PopError::Closed)
         } else {
             Err(PopError::Empty)
@@ -402,9 +405,9 @@ impl<T> ConcurrentShardedStack<T> {
         if self.bitmap.load(Ordering::Relaxed) & bit == 0 {
             return;
         }
-        self.bitmap.fetch_and(!bit, Ordering::Release);
+        self.bitmap.fetch_and(!bit, Ordering::Relaxed);
         if !shard.load(Ordering::Acquire, guard).is_null() {
-            self.bitmap.fetch_or(bit, Ordering::Release);
+            self.bitmap.fetch_or(bit, Ordering::Relaxed);
         }
     }
 
@@ -443,8 +446,8 @@ impl<T> Drop for ConcurrentShardedStack<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicBool, AtomicUsize};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, AtomicUsize};
     use std::time::{Duration, Instant};
 
     #[derive(Debug)]
@@ -821,13 +824,15 @@ mod tests {
             for _ in 0..n_poppers {
                 let s = Arc::clone(&s);
                 let popped = Arc::clone(&popped);
-                handles.push(std::thread::spawn(move || loop {
-                    match s.pop() {
-                        Ok(_) => {
-                            popped.fetch_add(1, Ordering::Relaxed);
+                handles.push(std::thread::spawn(move || {
+                    loop {
+                        match s.pop() {
+                            Ok(_) => {
+                                popped.fetch_add(1, Ordering::Relaxed);
+                            }
+                            Err(PopError::Empty) => std::hint::spin_loop(),
+                            Err(PopError::Closed) => break,
                         }
-                        Err(PopError::Empty) => std::hint::spin_loop(),
-                        Err(PopError::Closed) => break,
                     }
                 }));
             }
@@ -855,6 +860,12 @@ mod tests {
     /// Lopsided shard count: many shards, few threads. Most shards are owned
     /// by nobody, so a stealer that sees the bitmap is the only path to the
     /// elements pushed there. Catches loss-via-stealer-only paths.
+    ///
+    /// Skipped under Miri: open-stack stealer drain with a wall-clock watchdog,
+    /// same class of stress test as `no_element_loss_open_asymmetric`. Miri's
+    /// cooperative scheduler does not make reliable progress here. Stealer-path
+    /// coverage under Miri is provided by `no_element_loss_after_close_asymmetric`.
+    #[cfg_attr(miri, ignore)]
     #[test]
     fn no_element_loss_few_threads_many_shards() {
         #[cfg(miri)]
