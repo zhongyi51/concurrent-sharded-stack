@@ -184,6 +184,11 @@ impl<T> ConcurrentShardedStack<T> {
                 return Err(PushError::Closed(value));
             }
 
+            if head.is_null() {
+                let bit = Self::shard_bit(shard_index);
+                self.bitmap.fetch_or(bit, Ordering::Release);
+            }
+
             node.next.store(head, Ordering::Relaxed);
 
             match shard.compare_exchange_weak(
@@ -194,10 +199,9 @@ impl<T> ConcurrentShardedStack<T> {
                 guard,
             ) {
                 Ok(_) => {
-                    // Only touch the bitmap on the empty -> non-empty
-                    // transition. In the steady state `head` is already
-                    // non-null and the bit was set by some earlier push,
-                    // so we don't need to read or write the bitmap at all.
+                    // Re-set after CAS: a concurrent `maybe_clear_bit` on the
+                    // last-element path can clobber the pre-CAS `fetch_or`
+                    // while our CAS is still in flight.
                     if head.is_null() {
                         let bit = Self::shard_bit(shard_index);
                         self.bitmap.fetch_or(bit, Ordering::Release);
@@ -232,15 +236,13 @@ impl<T> ConcurrentShardedStack<T> {
             }
         }
 
-        // 2. Bitmap-guided steal. Each candidate shard gets the same
-        // 3-attempt budget as the local one — a single shot would give
-        // up too easily under contention.
-        let bits = self.bitmap.load(Ordering::Acquire);
-        for offset in 1..shard_count {
-            let index = (start + offset) & self.shard_index_mask;
-            if bits & Self::shard_bit(index) == 0 {
-                continue;
-            }
+        // 2. Bitmap-guided steal via trailing_zeros — O(popcount) over set
+        // bits instead of O(shard_count). Exclude the local shard we already
+        // tried in Phase 1.
+        let mut bits = self.bitmap.load(Ordering::Acquire) & !Self::shard_bit(start);
+        while bits != 0 {
+            let index = bits.trailing_zeros() as usize;
+            bits &= bits - 1;
             for _ in 0..CURRENT_SHARD_CAS_RETRIES {
                 match self.pop_one(index, guard) {
                     Ok(Some(value)) => return Ok(value),
