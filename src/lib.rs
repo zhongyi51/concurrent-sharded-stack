@@ -184,11 +184,6 @@ impl<T> ConcurrentShardedStack<T> {
                 return Err(PushError::Closed(value));
             }
 
-            if head.is_null() {
-                let bit = Self::shard_bit(shard_index);
-                self.bitmap.fetch_or(bit, Ordering::Release);
-            }
-
             node.next.store(head, Ordering::Relaxed);
 
             match shard.compare_exchange_weak(
@@ -199,12 +194,15 @@ impl<T> ConcurrentShardedStack<T> {
                 guard,
             ) {
                 Ok(_) => {
-                    // Re-set after CAS: a concurrent `maybe_clear_bit` on the
-                    // last-element path can clobber the pre-CAS `fetch_or`
-                    // while our CAS is still in flight.
+                    // Only touch the bitmap on the empty -> non-empty
+                    // transition. In the steady state `head` is already
+                    // non-null and the bit was set by some earlier push,
+                    // so we don't need to read or write the bitmap at all.
                     if head.is_null() {
                         let bit = Self::shard_bit(shard_index);
-                        self.bitmap.fetch_or(bit, Ordering::Release);
+                        if self.bitmap.load(Ordering::Relaxed) & bit == 0 {
+                            self.bitmap.fetch_or(bit, Ordering::Release);
+                        }
                     }
                     return Ok(());
                 }
