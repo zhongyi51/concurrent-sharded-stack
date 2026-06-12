@@ -31,11 +31,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread;
 
 static NEXT_THREAD_ID: AtomicUsize = AtomicUsize::new(0);
+
 const CLOSED_TAG: usize = 1;
-/// Maximum CAS retries before giving up on the local shard and scanning
-/// other shards. Only CAS losses count — a genuinely empty local shard
-/// breaks out of the retry loop immediately.
-const CURRENT_SHARD_CAS_RETRIES: usize = 3;
 
 thread_local! {
     static THREAD_ID: Cell<usize> = Cell::new(
@@ -102,14 +99,15 @@ impl<T> Node<T> {
     }
 }
 
+enum ShardPopResult<T> {
+    Popped(T),
+    Empty,
+    EmptyAndClosed,
+}
+
 /// Concurrent sharded Treiber stack.
 pub struct ConcurrentShardedStack<T> {
     shards: Box<[CachePadded<Atomic<Node<T>>>]>,
-
-    /// Bitmap for hinting.
-    /// Both `1` and `0` are just meaning that there may be or may not be an element in the corresponding shard.
-    bitmap: AtomicUsize,
-
     shard_index_mask: usize,
 }
 
@@ -126,7 +124,7 @@ impl<T> ConcurrentShardedStack<T> {
     /// Creates a stack using `available_parallelism()` as concurrency hint.
     pub fn new() -> Self {
         let concurrency = thread::available_parallelism()
-            .map(|n| n.get().next_power_of_two().min(usize::BITS as usize))
+            .map(|n| n.get().next_power_of_two())
             .unwrap_or(4);
 
         Self::with_concurrency(concurrency)
@@ -138,18 +136,12 @@ impl<T> ConcurrentShardedStack<T> {
     ///
     /// - `shard_count == 0`
     /// - `shard_count` is not power of two
-    /// - `shard_count > usize::BITS`
     pub fn with_concurrency(shard_count: usize) -> Self {
         assert!(shard_count > 0, "shard_count must be non-zero");
 
         assert!(
             shard_count.is_power_of_two(),
             "shard_count must be a power of two"
-        );
-
-        assert!(
-            shard_count <= usize::BITS as usize,
-            "shard_count must not exceed usize::BITS"
         );
 
         let mut shards = Vec::with_capacity(shard_count);
@@ -160,7 +152,6 @@ impl<T> ConcurrentShardedStack<T> {
 
         Self {
             shards: shards.into_boxed_slice(),
-            bitmap: AtomicUsize::new(0),
             shard_index_mask: shard_count - 1,
         }
     }
@@ -193,17 +184,7 @@ impl<T> ConcurrentShardedStack<T> {
                 Ordering::Relaxed,
                 guard,
             ) {
-                Ok(_) => {
-                    // Only touch the bitmap on the empty -> non-empty
-                    // transition. In the steady state `head` is already
-                    // non-null and the bit was set by some earlier push,
-                    // so we don't need to read or write the bitmap at all.
-                    if head.is_null() {
-                        let bit = Self::shard_bit(shard_index);
-                        self.bitmap.fetch_or(bit, Ordering::Release);
-                    }
-                    return Ok(());
-                }
+                Ok(_) => return Ok(()),
                 Err(err) => {
                     node = err.new;
                     spin_loop();
@@ -214,65 +195,63 @@ impl<T> ConcurrentShardedStack<T> {
 
     /// Pops a value from the stack non-blocking.
     ///
-    /// Returns `Err(PopError::Empty)` if the stack is empty.
-    /// Returns `Err(PopError::Closed)` if the stack is empty and closed.
+    /// Scan order:
+    ///
+    /// - first scan the current thread's own shard;
+    /// - then scan the shard whose last binary bit differs;
+    /// - then scan shards whose next binary bit differs;
+    /// - continue widening the differing-bit window until all shards are scanned.
+    ///
+    /// For example, with 8 shards and local shard `start`, the XOR masks are:
+    ///
+    /// ```text
+    /// 0,
+    /// 1,
+    /// 2, 3,
+    /// 4, 5, 6, 7
+    /// ```
+    ///
+    /// So the actual scan order is:
+    ///
+    /// ```text
+    /// start,
+    /// start ^ 1,
+    /// start ^ 2, start ^ 3,
+    /// start ^ 4, start ^ 5, start ^ 6, start ^ 7
+    /// ```
+    ///
+    /// Returns `Err(PopError::Empty)` if no element is found and at least one
+    /// shard is still observed open.
+    ///
+    /// Returns `Err(PopError::Closed)` if no element is found and every shard
+    /// is observed closed.
     pub fn pop(&self) -> Result<T, PopError> {
         let guard = &epoch::pin();
         let start = self.current_shard_index();
         let shard_count = self.shards.len();
 
-        // 1. Local shard. Retry only on CAS loss; a genuinely empty shard
-        // makes us bail out immediately rather than re-loading the same
-        // null head repeatedly.
-        for _ in 0..CURRENT_SHARD_CAS_RETRIES {
-            match self.pop_one(start, guard) {
-                Ok(Some(value)) => return Ok(value),
-                Ok(None) => break,
-                Err(()) => spin_loop(),
+        let mut all_closed = true;
+
+        for mask in 0..shard_count {
+            let index = start ^ mask;
+
+            match self.pop_one(index, guard) {
+                ShardPopResult::Popped(value) => return Ok(value),
+                ShardPopResult::Empty => {
+                    all_closed = false;
+                }
+                ShardPopResult::EmptyAndClosed => {}
             }
         }
 
-        // 2. Bitmap-guided steal. Each candidate shard gets the same
-        // 3-attempt budget as the local one — a single shot would give
-        // up too easily under contention.
-        let bits = self.bitmap.load(Ordering::Acquire);
-        for offset in 1..shard_count {
-            let index = (start + offset) & self.shard_index_mask;
-            if bits & Self::shard_bit(index) == 0 {
-                continue;
-            }
-            for _ in 0..CURRENT_SHARD_CAS_RETRIES {
-                match self.pop_one(index, guard) {
-                    Ok(Some(value)) => return Ok(value),
-                    Ok(None) => break,
-                    Err(()) => spin_loop(),
-                }
-            }
-        }
-
-        // 3. Only once the stack is confirmed closed do we do a full,
-        // bitmap-agnostic drain. Doing this while the stack is still open
-        // would race with concurrent pushes whose bitmap bit hasn't
-        // propagated yet, and we'd risk wrongly reporting Empty for
-        // elements that are actually in flight.
-        if self.all_shards_closed(guard) {
-            for offset in 0..shard_count {
-                let index = (start + offset) & self.shard_index_mask;
-                loop {
-                    match self.pop_one(index, guard) {
-                        Ok(Some(value)) => return Ok(value),
-                        Ok(None) => break,
-                        Err(()) => spin_loop(),
-                    }
-                }
-            }
+        if all_closed {
             Err(PopError::Closed)
         } else {
             Err(PopError::Empty)
         }
     }
 
-    /// Closes the stack, existing elements can still be popped.
+    /// Closes the stack. Existing elements can still be popped.
     pub fn close(&self) -> bool {
         let guard = &epoch::pin();
         let mut changed = false;
@@ -318,93 +297,63 @@ impl<T> ConcurrentShardedStack<T> {
         current_thread_id() & self.shard_index_mask
     }
 
-    fn shard_bit(index: usize) -> usize {
-        1usize << index
-    }
-
-    /// One CAS attempt on shard `index`.
+    /// Pops from one shard.
     ///
-    /// * `Ok(Some(value))` — popped a value.
-    /// * `Ok(None)`        — shard is empty (whether open or closed).
-    /// * `Err(())`         — CAS lost to another thread; caller decides whether to retry or move on.
+    /// This function loops until the shard produces a definite result:
     ///
-    /// Both the "empty on arrival" branch and the "last element popped"
-    /// branch funnel through [`Self::maybe_clear_bit`], which handles the
-    /// race between a clearing `fetch_and` here and a concurrent push's
-    /// `fetch_or`. Without that race fix, the bit can get stuck at `0`
-    /// over a non-empty shard, leaving the element invisible to stealers
-    /// in Phase 2 until the stack is closed.
-    fn pop_one(&self, index: usize, guard: &Guard) -> Result<Option<T>, ()> {
+    /// - popped one value;
+    /// - or the shard is observed empty.
+    ///
+    /// CAS failures are retried indefinitely for this shard. There is no fixed
+    /// retry budget anymore.
+    ///
+    /// Returns:
+    ///
+    /// - `value: Some(T)` if a value was popped;
+    /// - `value: None` if this shard is currently empty;
+    /// - `closed` indicates whether this shard was observed closed.
+    fn pop_one(&self, index: usize, guard: &Guard) -> ShardPopResult<T> {
         let shard = &self.shards[index];
-        let bit = Self::shard_bit(index);
 
-        let head = shard.load(Ordering::Acquire, guard);
-        if head.is_null() {
-            self.maybe_clear_bit(shard, bit, guard);
-            return Ok(None);
-        }
+        loop {
+            let head = shard.load(Ordering::Acquire, guard);
+            let closed = head.tag() == CLOSED_TAG;
 
-        let head_ref = unsafe { head.deref() };
-        // `head` was published by a Release CAS that we synchronised with
-        // via the Acquire load above, so all of the node's fields are
-        // already visible — a Relaxed load on `next` is enough.
-        let next = head_ref.next.load(Ordering::Relaxed, guard);
-        let new_head = next.with_tag(head.tag());
-
-        // Strong CAS: weak's spurious failures would burn the bounded retry
-        // budget in Phase 1/2 and leak a spurious `Empty` to the caller.
-        // On x86 strong compiles to the same `lock cmpxchg` as weak; on
-        // LL/SC the strong variant does the inner retry itself.
-        match shard.compare_exchange(head, new_head, Ordering::AcqRel, Ordering::Relaxed, guard) {
-            Ok(_) => {
-                if next.is_null() {
-                    self.maybe_clear_bit(shard, bit, guard);
-                }
-
-                // Move the value out of the popped node. The node itself
-                // is reclaimed later by the epoch GC; because `value` is
-                // a `ManuallyDrop<T>`, that deferred destruction will not
-                // drop it again.
-                let value = unsafe { ptr::read(&*head_ref.value) };
-                unsafe {
-                    guard.defer_destroy(head.with_tag(0));
-                }
-                Ok(Some(value))
+            if head.is_null() {
+                return if closed {
+                    ShardPopResult::EmptyAndClosed
+                } else {
+                    ShardPopResult::Empty
+                };
             }
-            Err(_) => Err(()),
-        }
-    }
 
-    /// Clear `bit` for a shard we just observed as empty (either on
-    /// arrival or because we popped its last element).
-    ///
-    /// The naive `fetch_and(!bit)` races with a concurrent push's
-    /// `fetch_or(bit)`: if the push happens between our bitmap load and
-    /// our `fetch_and`, our store clobbers the push's bit, leaving the
-    /// bit at `0` over a now-non-empty shard. Stealers in Phase 2 skip
-    /// shards with `bit == 0`, so the pushed element becomes invisible
-    /// to anyone but the shard's local owner — and in an asymmetric
-    /// workload (pure-pusher threads on some shards, pure-popper threads
-    /// on others) the local owner never pops, so the element is stuck
-    /// until the stack is `close`d (Phase 3 does a bitmap-agnostic
-    /// drain).
-    ///
-    /// The fix is to re-read the shard after clearing: if a push slipped
-    /// in (`head` is now non-null) we re-set the bit via `fetch_or`. The
-    /// worst residual outcome is a transient stuck-at-`1` (wasted scan,
-    /// self-heals on the next `pop_one(index)` which finds the shard
-    /// truly empty), which is correctness-safe.
-    ///
-    /// The leading `load(Relaxed)` keeps the steady-state cost low: when
-    /// the bit is already `0` we skip the `fetch_and` entirely and avoid
-    /// invalidating the bitmap cache line.
-    fn maybe_clear_bit(&self, shard: &Atomic<Node<T>>, bit: usize, guard: &Guard) {
-        if self.bitmap.load(Ordering::Relaxed) & bit == 0 {
-            return;
-        }
-        self.bitmap.fetch_and(!bit, Ordering::Release);
-        if !shard.load(Ordering::Acquire, guard).is_null() {
-            self.bitmap.fetch_or(bit, Ordering::Release);
+            let head_ref = unsafe { head.deref() };
+
+            // `head` was published by a Release CAS that we synchronized with
+            // via the Acquire load above, so the node's fields are visible.
+            let next = head_ref.next.load(Ordering::Relaxed, guard);
+
+            // Preserve the CLOSED tag when popping from a closed shard.
+            let new_head = next.with_tag(head.tag());
+
+            match shard.compare_exchange(head, new_head, Ordering::AcqRel, Ordering::Relaxed, guard)
+            {
+                Ok(_) => {
+                    // Move the value out of the popped node. The node itself
+                    // is reclaimed later by epoch GC; because `value` is inside
+                    // `ManuallyDrop<T>`, deferred destruction will not drop it again.
+                    let value = unsafe { ptr::read(&*head_ref.value) };
+
+                    unsafe {
+                        guard.defer_destroy(head.with_tag(0));
+                    }
+
+                    return ShardPopResult::Popped(value);
+                }
+                Err(_) => {
+                    spin_loop();
+                }
+            }
         }
     }
 
@@ -428,9 +377,11 @@ impl<T> Drop for ConcurrentShardedStack<T> {
                     let next = (*raw).next.load(Ordering::Relaxed, guard);
 
                     let mut node = Box::from_raw(raw);
+
                     // The value was never popped, so we are responsible for
-                    // dropping it here (it lives inside a `ManuallyDrop`).
+                    // dropping it here. It lives inside a `ManuallyDrop<T>`.
                     ManuallyDrop::drop(&mut node.value);
+
                     drop(node);
 
                     current = next;
@@ -443,8 +394,8 @@ impl<T> Drop for ConcurrentShardedStack<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicBool, AtomicUsize};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, AtomicUsize};
     use std::time::{Duration, Instant};
 
     #[derive(Debug)]
@@ -474,12 +425,6 @@ mod tests {
     #[should_panic]
     fn new_panics_if_not_power_of_two() {
         let _ = ConcurrentShardedStack::<usize>::with_concurrency(3);
-    }
-
-    #[test]
-    #[should_panic]
-    fn new_panics_if_too_many_shards() {
-        let _ = ConcurrentShardedStack::<usize>::with_concurrency((usize::BITS as usize) * 2);
     }
 
     #[test]
@@ -712,14 +657,15 @@ mod tests {
     /// Pure-pusher / pure-popper split with **no** `close()`. Pushers map to a
     /// disjoint set of shards from poppers, so the shards that hold the
     /// pushed elements have no "local owner" that will ever pop them — every
-    /// element has to be reached by stealers via the bitmap hint.
+    /// element has to be reached by a popper whose local shard differs from
+    /// the pusher's, i.e. via the cross-shard scan in [`Self::pop`].
     ///
-    /// This is the workload the bitmap stuck-at-0 race actually shows up in:
-    /// if a pop's `clear_bitmap_bit_if_set` reorders past a concurrent push's
-    /// `fetch_or`, the bit gets stuck at 0 over a non-empty shard, the
-    /// stealers in Phase 2 skip it, and the element is invisible until the
-    /// stack is closed. The test asserts every pushed element is observed by
-    /// some popper within a generous timeout; otherwise it fails loudly.
+    /// This is the workload that exercises the worst case of the sharded
+    /// scan: there is no fast path to the elements (no popper-thread ever
+    /// hits its own shard for these pushes), and poppers must keep walking
+    /// the full XOR-mask order until the elements are drained. The test
+    /// asserts every pushed element is observed by some popper within a
+    /// generous timeout; otherwise it fails loudly.
     ///
     /// Skipped under Miri: this is a hardware-race stress test (busy-spin
     /// poppers, no `close()`, watchdog measured in wall-clock seconds), and
@@ -793,9 +739,10 @@ mod tests {
     }
 
     /// Same asymmetric split, but with the producer side `close()`ing the
-    /// stack once it has pushed everything. This is what Phase 3 (the
-    /// post-close full scan) exists for — it must catch every in-flight
-    /// element even if the bitmap is lying about emptiness.
+    /// stack once it has pushed everything. The post-`close()` drain must
+    /// catch every in-flight element: with no `close()`, a popper can race
+    /// indefinitely against pushers and keep observing `Empty` between
+    /// pushes, so closing turns the open-ended scan into a finite one.
     #[test]
     fn no_element_loss_after_close_asymmetric() {
         #[cfg(miri)]
@@ -821,13 +768,15 @@ mod tests {
             for _ in 0..n_poppers {
                 let s = Arc::clone(&s);
                 let popped = Arc::clone(&popped);
-                handles.push(std::thread::spawn(move || loop {
-                    match s.pop() {
-                        Ok(_) => {
-                            popped.fetch_add(1, Ordering::Relaxed);
+                handles.push(std::thread::spawn(move || {
+                    loop {
+                        match s.pop() {
+                            Ok(_) => {
+                                popped.fetch_add(1, Ordering::Relaxed);
+                            }
+                            Err(PopError::Empty) => std::hint::spin_loop(),
+                            Err(PopError::Closed) => break,
                         }
-                        Err(PopError::Empty) => std::hint::spin_loop(),
-                        Err(PopError::Closed) => break,
                     }
                 }));
             }
@@ -853,8 +802,9 @@ mod tests {
     }
 
     /// Lopsided shard count: many shards, few threads. Most shards are owned
-    /// by nobody, so a stealer that sees the bitmap is the only path to the
-    /// elements pushed there. Catches loss-via-stealer-only paths.
+    /// by nobody, so a popper only reaches the elements pushed there via the
+    /// cross-shard scan in [`Self::pop`] (its own local shard is empty for
+    /// those pushers). Catches loss via the cross-shard scan path.
     #[test]
     fn no_element_loss_few_threads_many_shards() {
         #[cfg(miri)]
