@@ -152,13 +152,7 @@ Raw criterion output is in `bench_0.2.1.txt` (gitignored via `bench_*.txt`).
 
 ### 0.2.1
 
-- README: fix outdated "bitmap" / "<= usize::BITS" descriptions; the
-  shard scan is fully bitmap-free and `with_concurrency` has no upper
-  bound. Drop the "three implementations" / "8 → 256 threads" copy in
-  the bench section to match the simplified bench.
-- README: add a `### Benchmarks` block with this machine's measured
-  thrpt / time for `object_pool` and `mpmc` at 4 and 32 threads, plus
-  the exact CPU / OS / Rust environment that produced them.
+- Fix README.
 
 ### 0.2.0
 
