@@ -1,6 +1,6 @@
 [package]
 name = "concurrent-sharded-stack"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.85"
 description = "A lock-free concurrent stack that shards a Treiber stack per thread and reclaims memory with epoch-based GC."

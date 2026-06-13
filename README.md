@@ -16,7 +16,12 @@ pointer, so under heavy multi-threaded load the CAS loop becomes a contention
 bottleneck. This crate keeps **N independent shards** (each a Treiber stack on
 its own cache line) and routes each thread to a shard derived from its thread
 id. A coarse atomic bitmap hints which shards are non-empty so that `pop` can
-steal from other shards when the local one is empty.
+steal from other shards when the local one is empty. The steal walk uses a
+**tree-LIKE probe**: shards are visited in the XOR-mask order
+`start, start^1, start^2, start^3, ...`, which is the same order a BFS visits a
+binary tree of `N` leaves — shard `start` is the root, the next bit
+corresponds to the next tree level, and so on. Locality first, distant shards
+last.
 
 Trade-off: the structure is a *bag*-like LIFO. Ordering is only LIFO **within a
 shard**; across shards there is no global ordering guarantee.
@@ -94,6 +99,21 @@ cargo bench
 Sharding keeps throughput roughly flat as threads pile up, whereas a single
 lock-free stack degrades under CAS contention — that gap is the whole point of
 the crate.
+
+## Changelog
+
+### 0.2.0
+
+- Refactored the shard scan in `pop` to a tree-LIKE probe over a non-empty
+  hint bitmap (O(popcount) lookup instead of a full shard walk).
+- Fixed an element-loss bug where a stale bitmap hint could leave pushed
+  elements invisible to the steal phase under contention.
+- Bench: kept `object_pool` and `mpmc` (LIFO); thread counts narrowed to
+  two ECS shapes (4 / 32 threads).
+
+### 0.1.0
+
+- Initial release.
 
 ## License
 
