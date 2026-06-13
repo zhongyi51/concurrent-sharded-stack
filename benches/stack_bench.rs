@@ -74,9 +74,10 @@ fn implementations() -> [(&'static str, Factory); 2] {
     ]
 }
 
-/// Oversubscribed thread counts: from one-per-core up to 256 (web-server /
-/// thread-pool territory, far beyond physical parallelism).
-const THREAD_COUNTS: [usize; 4] = [8, 32, 64, 256];
+/// Representative ECS shapes:
+/// * 4 threads — low-end 2 vCPU ECS (entry shared / 1c2g, hyper-threaded).
+/// * 32 threads — high-end 16 vCPU ECS (compute-optimized, hyper-threaded).
+const THREAD_COUNTS: [usize; 2] = [4, 32];
 const OPS_PER_THREAD: usize = 20_000;
 
 /// Object-pool workload: pre-fill a pool sized to the thread count, then have
