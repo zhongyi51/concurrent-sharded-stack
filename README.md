@@ -1,6 +1,6 @@
 # concurrent-sharded-stack
 
-[![CI](https://github.com/l1z3/concurrent-sharded-stack/actions/workflows/ci.yml/badge.svg)](https://github.com/l1z3/concurrent-sharded-stack/actions/workflows/ci.yml)
+[![CI](https://github.com/zhongyi51/concurrent-sharded-stack/actions/workflows/ci.yml/badge.svg)](https://github.com/l1z3/concurrent-sharded-stack/actions/workflows/ci.yml)
 [![crates.io](https://img.shields.io/crates/v/concurrent-sharded-stack.svg)](https://crates.io/crates/concurrent-sharded-stack)
 [![docs.rs](https://docs.rs/concurrent-sharded-stack/badge.svg)](https://docs.rs/concurrent-sharded-stack)
 
