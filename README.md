@@ -1,6 +1,6 @@
 # concurrent-sharded-stack
 
-[![CI](https://github.com/zhongyi51/concurrent-sharded-stack/actions/workflows/ci.yml/badge.svg)](https://github.com/l1z3/concurrent-sharded-stack/actions/workflows/ci.yml)
+[![CI](https://github.com/zhongyi51/concurrent-sharded-stack/actions/workflows/ci.yml/badge.svg)](https://github.com/zhongyi51/concurrent-sharded-stack/actions/workflows/ci.yml)
 [![crates.io](https://img.shields.io/crates/v/concurrent-sharded-stack.svg)](https://crates.io/crates/concurrent-sharded-stack)
 [![docs.rs](https://docs.rs/concurrent-sharded-stack/badge.svg)](https://docs.rs/concurrent-sharded-stack)
 
@@ -17,13 +17,23 @@ bottleneck. This crate keeps **N independent shards** (each a Treiber stack on
 its own cache line) and routes each thread to a shard derived from its thread
 id. When the local shard is empty, `pop` falls back to a **tree-like probe**:
 shards are visited in the XOR-mask order `start, start^1, start^2, start^3,
-...`, which is the same order a BFS visits a binary tree of `N` leaves — shard
-`start` is the root, the next bit corresponds to the next tree level, and so
-on. Locality first, distant shards last. The scan is fully bitmap-free: no
-shared hint, no cross-core cache-line invalidations on a hot metadata line.
+...`. This groups neighboring shard indices first; thread IDs do not encode
+CPU or NUMA placement, so it does not guarantee hardware locality. The scan is
+fully bitmap-free: no shared hint, no cross-core cache-line invalidations on a
+hot metadata line.
 
 Trade-off: the structure is a *bag*-like LIFO. Ordering is only LIFO **within a
 shard**; across shards there is no global ordering guarantee.
+
+An `Empty` result means one scan found no item. It is not an atomic snapshot:
+concurrent pushes and pops can make it occur while the stack remains nonempty.
+Consumers should retry while producers are active. `Closed` from `pop` is
+terminal: all shards were observed closed and drained.
+
+`close()` propagates one shard at a time. While it is running, a rejected push
+on one shard can precede a successful push on another, and `is_closed()` may
+still be false. After `close()` returns, every shard rejects pushes. Its boolean
+means this call closed at least one shard; concurrent callers can both get true.
 
 ## Example
 
@@ -68,8 +78,12 @@ assert_eq!(popped.len(), 4);
 
 The implementation is `unsafe`-heavy by nature (lock-free + manual memory
 reclamation). Correctness is checked under [Miri] in CI using the Tree Borrows
-aliasing model, including dedicated tests that detect double-drops and leaks of
-non-`Copy` payloads.
+aliasing model. Dedicated tests check payload drop counts, cleanup after a
+payload destructor panics, and documented concurrent scan/close behavior.
+Deferred node reclamation is not guaranteed to finish before process exit;
+Miri's leak check is disabled, so these tests do not prove every retired node
+has been reclaimed. As with standard containers, a second destructor panic
+during unwinding aborts the process.
 
 [Miri]: https://github.com/rust-lang/miri
 
@@ -82,21 +96,29 @@ workload**:
 - [`lockfree::stack::Stack`](https://crates.io/crates/lockfree) — a popular
   single lock-free stack on crates.io.
 
-Two workloads model real usage under thread counts bracketed to typical ECS
-shapes (4 threads ≈ low-end 2 vCPU, 32 threads ≈ high-end 16 vCPU):
+Two workloads exercise different access patterns:
 
 - `object_pool` — a fixed pool where every worker repeatedly acquires (pop) and
-  releases (push) an object (connection/buffer pool pattern).
-- `mpmc` — dedicated producer and consumer threads (fan-out work queue).
+  releases (push) an object (connection/buffer pool pattern), with 4 or 32 workers.
+  An unsuccessful scan retries without growing the pool.
+- `mpmc` — 4 producers + 4 consumers, or 32 producers + 32 consumers. Each worker
+  handles a fixed quota; there is no extra shared per-item progress counter.
+
+Workers start together at a barrier. Thread creation and teardown are included
+in the timed iterations. The two implementations provide different ordering
+contracts: the baseline is globally LIFO, whereas this crate is LIFO per shard.
 
 ```sh
 cargo bench
 ```
 
-Sharding keeps throughput roughly flat as threads pile up, whereas a single
-lock-free stack degrades under CAS contention — that gap is the whole point of
-the crate. See the *Benchmarks* section below for a snapshot of measured
-throughput.
+### Historical measurements
+
+The following numbers were collected before the benchmark fixes above: the
+old object-pool workload could grow the pool after an unsuccessful scan, MPMC
+used a shared counter on every pop, and workers had no start barrier. They are
+retained as historical results, not measurements of the current harness.
+Rerun `cargo bench` before drawing performance conclusions about this version.
 
 ### Environment
 
@@ -113,9 +135,9 @@ Captured on the maintainer's local machine.
 
 Numbers are criterion-estimated medians from a single `cargo bench` run; 100
 samples per case, 5–15 s wall clock per case (longer for the contended
-lockfree / 32-thread cases). All `thrpt` figures are millions of
-elements pushed+popped per second (`Melem/s`); `time` is wall-clock per
-bench iteration.
+lockfree cases). `thrpt` counts millions of pool iterations or MPMC transferred
+elements per second (`Melem/s`), not individual push and pop calls; `time` is
+wall-clock per bench iteration.
 
 #### `object_pool` — acquire / release a fixed pool
 
@@ -124,21 +146,17 @@ bench iteration.
 |       4 |  33.88 Melem/s |   5.85 Melem/s |       2.36 ms |      13.68 ms |               5.79x |
 |      32 |  85.46 Melem/s |   4.34 Melem/s |       7.49 ms |     147.36 ms |              19.69x |
 
-The sharded stack scales 2.5× from 4 → 32 threads (33.88 → 85.46 Melem/s)
-while the single lock-free stack actually regresses (5.85 → 4.34 Melem/s)
-— a textbook CAS-contention cliff at 32 threads where every producer and
-consumer is fighting over the one atomic head.
+#### `mpmc` — dedicated producers / consumers
 
-#### `mpmc` — dedicated producers / consumers (LIFO)
+The old labels 4 and 32 meant workers **per role**, not total workers. The table
+below shows the actual producer + consumer counts.
 
-| Threads | Sharded thrpt | lockfree thrpt | Sharded time | lockfree time | Sharded vs lockfree |
+| Producers + consumers | Sharded thrpt | lockfree thrpt | Sharded time | lockfree time | Sharded vs lockfree |
 |--------:|--------------:|---------------:|-------------:|--------------:|--------------------:|
-|       4 |  15.48 Melem/s |   5.21 Melem/s |       5.17 ms |      15.37 ms |               2.97x |
-|      32 |  17.69 Melem/s |   4.69 Melem/s |      36.18 ms |     136.32 ms |               3.77x |
+|   4 + 4 |  15.48 Melem/s |   5.21 Melem/s |       5.17 ms |      15.37 ms |               2.97x |
+| 32 + 32 |  17.69 Melem/s |   4.69 Melem/s |      36.18 ms |     136.32 ms |               3.77x |
 
-Even on the cleaner pure-push/pure-pop workload, sharded stays 3–4× ahead
-and the lockfree stack again drifts *down* with more threads (4.69
-Melem/s at 32t vs 5.21 at 4t).
+These historical MPMC results used 8 and 64 total workers respectively.
 
 ### Reproduce
 
@@ -149,6 +167,14 @@ cargo bench --bench stack_bench
 Raw criterion output is in `bench_0.2.1.txt` (gitignored via `bench_*.txt`).
 
 ## Changelog
+
+### Unreleased
+
+- Document weak empty scans and gradual closing, with deterministic tests.
+- Drain remaining payloads if one payload destructor panics.
+- Correct benchmark worker labels, keep the object pool fixed, synchronize
+  worker starts, and remove the MPMC progress-counter bottleneck.
+- Check the declared Rust 1.85 minimum in CI.
 
 ### 0.2.1
 
