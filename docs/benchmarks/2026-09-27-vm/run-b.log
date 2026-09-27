@@ -1,0 +1,257 @@
+    Finished `bench` profile [optimized + debuginfo] target(s) in 0.03s
+     Running benches/stack_bench.rs (target/release/deps/stack_bench-316d3ca24242e152)
+Gnuplot not found, using plotters backend
+Benchmarking object_pool/sharded/1
+Benchmarking object_pool/sharded/1: Warming up for 1.0000 s
+Benchmarking object_pool/sharded/1: Collecting 20 samples in estimated 3.0089 s (2730 iterations)
+Benchmarking object_pool/sharded/1: Analyzing
+object_pool/sharded/1   time:   [1.0590 ms 1.0661 ms 1.0760 ms]
+                        thrpt:  [18.588 Melem/s 18.760 Melem/s 18.886 Melem/s]
+Found 2 outliers among 20 measurements (10.00%)
+  2 (10.00%) high severe
+Benchmarking object_pool/sharded/4
+Benchmarking object_pool/sharded/4: Warming up for 1.0000 s
+Benchmarking object_pool/sharded/4: Collecting 20 samples in estimated 3.7388 s (840 iterations)
+Benchmarking object_pool/sharded/4: Analyzing
+object_pool/sharded/4   time:   [4.1078 ms 4.5625 ms 5.0797 ms]
+                        thrpt:  [15.749 Melem/s 17.534 Melem/s 19.475 Melem/s]
+Found 3 outliers among 20 measurements (15.00%)
+  3 (15.00%) low mild
+Benchmarking object_pool/sharded/8
+Benchmarking object_pool/sharded/8: Warming up for 1.0000 s
+Benchmarking object_pool/sharded/8: Collecting 20 samples in estimated 3.1195 s (420 iterations)
+Benchmarking object_pool/sharded/8: Analyzing
+object_pool/sharded/8   time:   [4.9559 ms 5.1770 ms 5.5277 ms]
+                        thrpt:  [28.945 Melem/s 30.906 Melem/s 32.285 Melem/s]
+Benchmarking object_pool/lockfree_lifo/1
+Benchmarking object_pool/lockfree_lifo/1: Warming up for 1.0000 s
+Benchmarking object_pool/lockfree_lifo/1: Collecting 20 samples in estimated 3.0501 s (6720 iterations)
+Benchmarking object_pool/lockfree_lifo/1: Analyzing
+object_pool/lockfree_lifo/1
+                        time:   [440.17 µs 457.73 µs 484.33 µs]
+                        thrpt:  [41.294 Melem/s 43.694 Melem/s 45.437 Melem/s]
+Found 3 outliers among 20 measurements (15.00%)
+  1 (5.00%) high mild
+  2 (10.00%) high severe
+Benchmarking object_pool/lockfree_lifo/4
+Benchmarking object_pool/lockfree_lifo/4: Warming up for 1.0000 s
+Benchmarking object_pool/lockfree_lifo/4: Collecting 20 samples in estimated 5.7264 s (420 iterations)
+Benchmarking object_pool/lockfree_lifo/4: Analyzing
+object_pool/lockfree_lifo/4
+                        time:   [18.515 ms 19.069 ms 19.628 ms]
+                        thrpt:  [4.0758 Melem/s 4.1953 Melem/s 4.3208 Melem/s]
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) low mild
+Benchmarking object_pool/lockfree_lifo/8
+Benchmarking object_pool/lockfree_lifo/8: Warming up for 1.0000 s
+Benchmarking object_pool/lockfree_lifo/8: Collecting 20 samples in estimated 3.8783 s (80 iterations)
+Benchmarking object_pool/lockfree_lifo/8: Analyzing
+object_pool/lockfree_lifo/8
+                        time:   [49.820 ms 51.839 ms 53.820 ms]
+                        thrpt:  [2.9729 Melem/s 3.0865 Melem/s 3.2115 Melem/s]
+Benchmarking object_pool/mutex_vec_lifo/1
+Benchmarking object_pool/mutex_vec_lifo/1: Warming up for 1.0000 s
+Benchmarking object_pool/mutex_vec_lifo/1: Collecting 20 samples in estimated 3.0063 s (12k iterations)
+Benchmarking object_pool/mutex_vec_lifo/1: Analyzing
+object_pool/mutex_vec_lifo/1
+                        time:   [247.55 µs 250.88 µs 255.30 µs]
+                        thrpt:  [78.340 Melem/s 79.720 Melem/s 80.791 Melem/s]
+Found 2 outliers among 20 measurements (10.00%)
+  1 (5.00%) high mild
+  1 (5.00%) high severe
+Benchmarking object_pool/mutex_vec_lifo/4
+Benchmarking object_pool/mutex_vec_lifo/4: Warming up for 1.0000 s
+Benchmarking object_pool/mutex_vec_lifo/4: Collecting 20 samples in estimated 3.3810 s (630 iterations)
+Benchmarking object_pool/mutex_vec_lifo/4: Analyzing
+object_pool/mutex_vec_lifo/4
+                        time:   [5.5335 ms 5.7391 ms 5.9392 ms]
+                        thrpt:  [13.470 Melem/s 13.939 Melem/s 14.457 Melem/s]
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high severe
+Benchmarking object_pool/mutex_vec_lifo/8
+Benchmarking object_pool/mutex_vec_lifo/8: Warming up for 1.0000 s
+Benchmarking object_pool/mutex_vec_lifo/8: Collecting 20 samples in estimated 5.0533 s (420 iterations)
+Benchmarking object_pool/mutex_vec_lifo/8: Analyzing
+object_pool/mutex_vec_lifo/8
+                        time:   [10.981 ms 11.288 ms 11.661 ms]
+                        thrpt:  [13.720 Melem/s 14.174 Melem/s 14.571 Melem/s]
+Benchmarking object_pool/segqueue_fifo/1
+Benchmarking object_pool/segqueue_fifo/1: Warming up for 1.0000 s
+Benchmarking object_pool/segqueue_fifo/1: Collecting 20 samples in estimated 3.0516 s (9030 iterations)
+Benchmarking object_pool/segqueue_fifo/1: Analyzing
+object_pool/segqueue_fifo/1
+                        time:   [334.23 µs 338.37 µs 342.26 µs]
+                        thrpt:  [58.435 Melem/s 59.106 Melem/s 59.838 Melem/s]
+Benchmarking object_pool/segqueue_fifo/4
+Benchmarking object_pool/segqueue_fifo/4: Warming up for 1.0000 s
+Benchmarking object_pool/segqueue_fifo/4: Collecting 20 samples in estimated 3.1714 s (2520 iterations)
+Benchmarking object_pool/segqueue_fifo/4: Analyzing
+object_pool/segqueue_fifo/4
+                        time:   [1.2758 ms 1.3299 ms 1.4039 ms]
+                        thrpt:  [56.985 Melem/s 60.153 Melem/s 62.706 Melem/s]
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+Benchmarking object_pool/segqueue_fifo/8
+Benchmarking object_pool/segqueue_fifo/8: Warming up for 1.0000 s
+Benchmarking object_pool/segqueue_fifo/8: Collecting 20 samples in estimated 3.1204 s (1260 iterations)
+Benchmarking object_pool/segqueue_fifo/8: Analyzing
+object_pool/segqueue_fifo/8
+                        time:   [2.5915 ms 2.7165 ms 2.8846 ms]
+                        thrpt:  [55.467 Melem/s 58.900 Melem/s 61.740 Melem/s]
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+Benchmarking object_pool/arrayqueue_fifo/1
+Benchmarking object_pool/arrayqueue_fifo/1: Warming up for 1.0000 s
+Benchmarking object_pool/arrayqueue_fifo/1: Collecting 20 samples in estimated 3.0360 s (12k iterations)
+Benchmarking object_pool/arrayqueue_fifo/1: Analyzing
+object_pool/arrayqueue_fifo/1
+                        time:   [245.67 µs 250.65 µs 256.27 µs]
+                        thrpt:  [78.043 Melem/s 79.794 Melem/s 81.409 Melem/s]
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+Benchmarking object_pool/arrayqueue_fifo/4
+Benchmarking object_pool/arrayqueue_fifo/4: Warming up for 1.0000 s
+Benchmarking object_pool/arrayqueue_fifo/4: Collecting 20 samples in estimated 3.7610 s (630 iterations)
+Benchmarking object_pool/arrayqueue_fifo/4: Analyzing
+object_pool/arrayqueue_fifo/4
+                        time:   [4.0746 ms 5.9094 ms 8.6937 ms]
+                        thrpt:  [9.2021 Melem/s 13.538 Melem/s 19.634 Melem/s]
+Benchmarking object_pool/arrayqueue_fifo/8
+Benchmarking object_pool/arrayqueue_fifo/8: Warming up for 1.0000 s
+Benchmarking object_pool/arrayqueue_fifo/8: Collecting 20 samples in estimated 3.9975 s (420 iterations)
+Benchmarking object_pool/arrayqueue_fifo/8: Analyzing
+object_pool/arrayqueue_fifo/8
+                        time:   [11.319 ms 15.151 ms 18.838 ms]
+                        thrpt:  [8.4933 Melem/s 10.560 Melem/s 14.135 Melem/s]
+Found 3 outliers among 20 measurements (15.00%)
+  2 (10.00%) high mild
+  1 (5.00%) high severe
+
+Benchmarking mpmc/sharded/1p_1c
+Benchmarking mpmc/sharded/1p_1c: Warming up for 1.0000 s
+Benchmarking mpmc/sharded/1p_1c: Collecting 20 samples in estimated 3.2535 s (1680 iterations)
+Benchmarking mpmc/sharded/1p_1c: Analyzing
+mpmc/sharded/1p_1c      time:   [1.9272 ms 2.0843 ms 2.2095 ms]
+                        thrpt:  [9.0520 Melem/s 9.5957 Melem/s 10.378 Melem/s]
+Found 5 outliers among 20 measurements (25.00%)
+  1 (5.00%) low mild
+  4 (20.00%) high severe
+Benchmarking mpmc/sharded/4p_4c
+Benchmarking mpmc/sharded/4p_4c: Warming up for 1.0000 s
+Benchmarking mpmc/sharded/4p_4c: Collecting 20 samples in estimated 4.0807 s (630 iterations)
+Benchmarking mpmc/sharded/4p_4c: Analyzing
+mpmc/sharded/4p_4c      time:   [8.0492 ms 9.3480 ms 10.540 ms]
+                        thrpt:  [7.5902 Melem/s 8.5580 Melem/s 9.9389 Melem/s]
+Benchmarking mpmc/sharded/8p_8c
+Benchmarking mpmc/sharded/8p_8c: Warming up for 1.0000 s
+
+Warning: Unable to complete 20 samples in 3.0s. You may wish to increase target time to 3.4s, enable flat sampling, or reduce sample count to 10.
+Benchmarking mpmc/sharded/8p_8c: Collecting 20 samples in estimated 3.4134 s (210 iterations)
+Benchmarking mpmc/sharded/8p_8c: Analyzing
+mpmc/sharded/8p_8c      time:   [18.597 ms 19.396 ms 20.259 ms]
+                        thrpt:  [7.8979 Melem/s 8.2492 Melem/s 8.6035 Melem/s]
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) low mild
+Benchmarking mpmc/lockfree_lifo/1p_1c
+Benchmarking mpmc/lockfree_lifo/1p_1c: Warming up for 1.0000 s
+Benchmarking mpmc/lockfree_lifo/1p_1c: Collecting 20 samples in estimated 3.5476 s (1050 iterations)
+Benchmarking mpmc/lockfree_lifo/1p_1c: Analyzing
+mpmc/lockfree_lifo/1p_1c
+                        time:   [2.7292 ms 3.1026 ms 3.5089 ms]
+                        thrpt:  [5.6997 Melem/s 6.4463 Melem/s 7.3282 Melem/s]
+Found 3 outliers among 20 measurements (15.00%)
+  2 (10.00%) low mild
+  1 (5.00%) high mild
+Benchmarking mpmc/lockfree_lifo/4p_4c
+Benchmarking mpmc/lockfree_lifo/4p_4c: Warming up for 1.0000 s
+Benchmarking mpmc/lockfree_lifo/4p_4c: Collecting 20 samples in estimated 5.7770 s (420 iterations)
+Benchmarking mpmc/lockfree_lifo/4p_4c: Analyzing
+mpmc/lockfree_lifo/4p_4c
+                        time:   [12.950 ms 13.556 ms 14.446 ms]
+                        thrpt:  [5.5379 Melem/s 5.9014 Melem/s 6.1776 Melem/s]
+Benchmarking mpmc/lockfree_lifo/8p_8c
+Benchmarking mpmc/lockfree_lifo/8p_8c: Warming up for 1.0000 s
+Benchmarking mpmc/lockfree_lifo/8p_8c: Collecting 20 samples in estimated 3.2767 s (100 iterations)
+Benchmarking mpmc/lockfree_lifo/8p_8c: Analyzing
+mpmc/lockfree_lifo/8p_8c
+                        time:   [40.648 ms 41.929 ms 43.228 ms]
+                        thrpt:  [3.7013 Melem/s 3.8160 Melem/s 3.9363 Melem/s]
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+Benchmarking mpmc/mutex_vec_lifo/1p_1c
+Benchmarking mpmc/mutex_vec_lifo/1p_1c: Warming up for 1.0000 s
+Benchmarking mpmc/mutex_vec_lifo/1p_1c: Collecting 20 samples in estimated 3.3828 s (1470 iterations)
+Benchmarking mpmc/mutex_vec_lifo/1p_1c: Analyzing
+mpmc/mutex_vec_lifo/1p_1c
+                        time:   [2.0015 ms 2.0920 ms 2.1645 ms]
+                        thrpt:  [9.2398 Melem/s 9.5602 Melem/s 9.9924 Melem/s]
+Benchmarking mpmc/mutex_vec_lifo/4p_4c
+Benchmarking mpmc/mutex_vec_lifo/4p_4c: Warming up for 1.0000 s
+Benchmarking mpmc/mutex_vec_lifo/4p_4c: Collecting 20 samples in estimated 5.3677 s (420 iterations)
+Benchmarking mpmc/mutex_vec_lifo/4p_4c: Analyzing
+mpmc/mutex_vec_lifo/4p_4c
+                        time:   [11.662 ms 12.060 ms 12.548 ms]
+                        thrpt:  [6.3756 Melem/s 6.6337 Melem/s 6.8601 Melem/s]
+Benchmarking mpmc/mutex_vec_lifo/8p_8c
+Benchmarking mpmc/mutex_vec_lifo/8p_8c: Warming up for 1.0000 s
+Benchmarking mpmc/mutex_vec_lifo/8p_8c: Collecting 20 samples in estimated 3.3000 s (100 iterations)
+Benchmarking mpmc/mutex_vec_lifo/8p_8c: Analyzing
+mpmc/mutex_vec_lifo/8p_8c
+                        time:   [29.529 ms 31.000 ms 32.234 ms]
+                        thrpt:  [4.9637 Melem/s 5.1612 Melem/s 5.4184 Melem/s]
+Found 2 outliers among 20 measurements (10.00%)
+  2 (10.00%) low mild
+Benchmarking mpmc/segqueue_fifo/1p_1c
+Benchmarking mpmc/segqueue_fifo/1p_1c: Warming up for 1.0000 s
+Benchmarking mpmc/segqueue_fifo/1p_1c: Collecting 20 samples in estimated 3.0729 s (5460 iterations)
+Benchmarking mpmc/segqueue_fifo/1p_1c: Analyzing
+mpmc/segqueue_fifo/1p_1c
+                        time:   [395.69 µs 410.39 µs 433.53 µs]
+                        thrpt:  [46.133 Melem/s 48.734 Melem/s 50.545 Melem/s]
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high severe
+Benchmarking mpmc/segqueue_fifo/4p_4c
+Benchmarking mpmc/segqueue_fifo/4p_4c: Warming up for 1.0000 s
+Benchmarking mpmc/segqueue_fifo/4p_4c: Collecting 20 samples in estimated 3.1052 s (2730 iterations)
+Benchmarking mpmc/segqueue_fifo/4p_4c: Analyzing
+mpmc/segqueue_fifo/4p_4c
+                        time:   [1.1233 ms 1.1556 ms 1.1880 ms]
+                        thrpt:  [67.339 Melem/s 69.228 Melem/s 71.217 Melem/s]
+Found 2 outliers among 20 measurements (10.00%)
+  1 (5.00%) low mild
+  1 (5.00%) high mild
+Benchmarking mpmc/segqueue_fifo/8p_8c
+Benchmarking mpmc/segqueue_fifo/8p_8c: Warming up for 1.0000 s
+Benchmarking mpmc/segqueue_fifo/8p_8c: Collecting 20 samples in estimated 3.4479 s (1470 iterations)
+Benchmarking mpmc/segqueue_fifo/8p_8c: Analyzing
+mpmc/segqueue_fifo/8p_8c
+                        time:   [2.2334 ms 2.3492 ms 2.4376 ms]
+                        thrpt:  [65.638 Melem/s 68.107 Melem/s 71.640 Melem/s]
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+Benchmarking mpmc/arrayqueue_fifo/1p_1c
+Benchmarking mpmc/arrayqueue_fifo/1p_1c: Warming up for 1.0000 s
+Benchmarking mpmc/arrayqueue_fifo/1p_1c: Collecting 20 samples in estimated 3.0189 s (6930 iterations)
+Benchmarking mpmc/arrayqueue_fifo/1p_1c: Analyzing
+mpmc/arrayqueue_fifo/1p_1c
+                        time:   [559.22 µs 606.21 µs 643.59 µs]
+                        thrpt:  [31.075 Melem/s 32.992 Melem/s 35.764 Melem/s]
+Benchmarking mpmc/arrayqueue_fifo/4p_4c
+Benchmarking mpmc/arrayqueue_fifo/4p_4c: Warming up for 1.0000 s
+Benchmarking mpmc/arrayqueue_fifo/4p_4c: Collecting 20 samples in estimated 3.6832 s (840 iterations)
+Benchmarking mpmc/arrayqueue_fifo/4p_4c: Analyzing
+mpmc/arrayqueue_fifo/4p_4c
+                        time:   [4.5356 ms 4.9697 ms 5.2977 ms]
+                        thrpt:  [15.101 Melem/s 16.098 Melem/s 17.638 Melem/s]
+Benchmarking mpmc/arrayqueue_fifo/8p_8c
+Benchmarking mpmc/arrayqueue_fifo/8p_8c: Warming up for 1.0000 s
+
+Warning: Unable to complete 20 samples in 3.0s. You may wish to increase target time to 3.3s, enable flat sampling, or reduce sample count to 10.
+Benchmarking mpmc/arrayqueue_fifo/8p_8c: Collecting 20 samples in estimated 3.2969 s (210 iterations)
+Benchmarking mpmc/arrayqueue_fifo/8p_8c: Analyzing
+mpmc/arrayqueue_fifo/8p_8c
+                        time:   [10.034 ms 12.493 ms 14.751 ms]
+                        thrpt:  [10.847 Melem/s 12.807 Melem/s 15.945 Melem/s]
+Found 2 outliers among 20 measurements (10.00%)
+  1 (5.00%) low mild
+  1 (5.00%) high mild

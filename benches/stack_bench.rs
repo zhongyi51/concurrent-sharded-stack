@@ -1,191 +1,277 @@
-//! Comparative benchmarks for `ConcurrentShardedStack`.
+//! End-to-end container workloads, not isolated push/pop latency measurements.
 //!
-//! Every scenario runs the *same* workload against two lock-free
-//! implementations:
+//! The sharded stack does not provide global LIFO. The `lockfree` and mutex
+//! stacks do; Crossbeam's queues provide FIFO. These different contracts are
+//! interchangeable only for workloads that do not require a particular order.
 //!
-//! * [`ConcurrentShardedStack`] — this crate,
-//! * [`lockfree::stack::Stack`] — the well-known lock-free stack crate on
-//!   crates.io. Unlike the sharded implementation, it provides global LIFO.
+//! `object_pool` repeatedly acquires and returns values from a fixed pool of
+//! four values per worker. `mpmc` transfers unique values between equal numbers
+//! of producers and consumers; `4p_4c` means eight worker threads in total.
+//! Shard counts are the worker count (pool) or producer count (MPMC), rounded up
+//! to a power of two. ArrayQueue holds the entire initial pool in `object_pool`
+//! and has a fixed capacity of 1,024 in `mpmc`, applying backpressure when full.
 //!
-//! The two scenarios model how a concurrent LIFO stack is actually used under
-//! load:
-//!
-//! * `object_pool` — a fixed pool of objects; every worker repeatedly *acquires*
-//!   (pop) and *releases* (push) one. This is the connection/buffer pool used
-//!   by web servers and thread pools.
-//! * `mpmc` — dedicated producer and consumer threads with no pre-fill.
-//!   Benchmark IDs give both counts, e.g. `4p_4c` means eight workers.
-//!
-//! Workers share a start barrier. Thread creation and teardown remain inside
-//! the timed iteration, so these are end-to-end workload measurements.
+//! Each iteration includes container construction, prefill, thread creation,
+//! a shared start barrier, work, joining, validation, and container destruction.
+//! Failed operations all yield and retry; long stalls fail with a diagnostic.
+//! Implementations use static dispatch. Value checks and retry bookkeeping are
+//! part of the measured workload; there is no shared per-operation counter.
 
-use std::sync::{Arc, Barrier};
+use std::sync::{Arc, Barrier, Mutex};
 use std::thread;
+use std::time::{Duration, Instant};
 
 use concurrent_sharded_stack::ConcurrentShardedStack;
-use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
+use criterion::measurement::WallTime;
+use criterion::{
+    BenchmarkGroup, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main,
+};
+use crossbeam_queue::{ArrayQueue, SegQueue};
 use lockfree::stack::Stack as LockFreeStack;
 
-/// Minimal API shared by every implementation under test.
-trait Stackish: Send + Sync {
-    fn push_one(&self, value: usize);
+/// Minimal statically dispatched API for unordered transfer workloads.
+trait Container: Send + Sync + 'static {
+    fn new(workers: usize, capacity: usize) -> Self;
+    /// Return the original value when bounded storage is full.
+    fn push_one(&self, value: usize) -> Result<(), usize>;
     fn pop_one(&self) -> Option<usize>;
 }
 
-impl Stackish for ConcurrentShardedStack<usize> {
-    fn push_one(&self, value: usize) {
+impl Container for ConcurrentShardedStack<usize> {
+    fn new(workers: usize, _: usize) -> Self {
+        Self::with_concurrency(workers.next_power_of_two())
+    }
+    fn push_one(&self, value: usize) -> Result<(), usize> {
+        // Nothing in these workloads closes the stack.
         self.push(value).unwrap();
+        Ok(())
     }
     fn pop_one(&self) -> Option<usize> {
         self.pop().ok()
     }
 }
 
-impl Stackish for LockFreeStack<usize> {
-    fn push_one(&self, value: usize) {
+impl Container for LockFreeStack<usize> {
+    fn new(_: usize, _: usize) -> Self {
+        Self::new()
+    }
+    fn push_one(&self, value: usize) -> Result<(), usize> {
         self.push(value);
+        Ok(())
     }
     fn pop_one(&self) -> Option<usize> {
         self.pop()
     }
 }
 
-/// Round the workload's shard hint to the required power of two.
-fn shard_hint(threads: usize) -> usize {
-    threads.next_power_of_two()
+impl Container for Mutex<Vec<usize>> {
+    fn new(_: usize, capacity: usize) -> Self {
+        Self::new(Vec::with_capacity(capacity))
+    }
+    fn push_one(&self, value: usize) -> Result<(), usize> {
+        self.lock().unwrap().push(value);
+        Ok(())
+    }
+    fn pop_one(&self) -> Option<usize> {
+        self.lock().unwrap().pop()
+    }
 }
 
-/// The two implementations, as factories taking the thread count (the sharded
-/// stack sizes itself from it).
-type Factory = fn(usize) -> Arc<dyn Stackish>;
-
-fn implementations() -> [(&'static str, Factory); 2] {
-    [
-        ("sharded", |threads| {
-            Arc::new(ConcurrentShardedStack::with_concurrency(shard_hint(
-                threads,
-            )))
-        }),
-        ("lockfree", |_| Arc::new(LockFreeStack::new())),
-    ]
+impl Container for SegQueue<usize> {
+    fn new(_: usize, _: usize) -> Self {
+        Self::new()
+    }
+    fn push_one(&self, value: usize) -> Result<(), usize> {
+        self.push(value);
+        Ok(())
+    }
+    fn pop_one(&self) -> Option<usize> {
+        self.pop()
+    }
 }
 
-/// Object-pool worker counts; MPMC uses this many workers in each role.
-const THREAD_COUNTS: [usize; 2] = [4, 32];
-const OPS_PER_THREAD: usize = 20_000;
+impl Container for ArrayQueue<usize> {
+    fn new(_: usize, capacity: usize) -> Self {
+        Self::new(capacity)
+    }
+    fn push_one(&self, value: usize) -> Result<(), usize> {
+        self.push(value)
+    }
+    fn pop_one(&self) -> Option<usize> {
+        self.pop()
+    }
+}
 
-/// Object-pool workload: pre-fill a pool sized to the thread count, then have
-/// every worker repeatedly acquire (pop) and release (push) an object. Models a
-/// connection pool / buffer pool shared across many request handlers.
-fn bench_object_pool(c: &mut Criterion) {
-    let mut group = c.benchmark_group("object_pool");
-    // Each worker holds at most one object at a time; size the pool so there is
-    // contention but pops usually succeed.
-    let pool_per_thread = 4;
+/// Check time only after sustained failure; successful operations need no clock.
+#[derive(Default)]
+struct Retry {
+    attempts: usize,
+    since: Option<Instant>,
+}
 
-    for &threads in &THREAD_COUNTS {
-        group.throughput(Throughput::Elements((threads * OPS_PER_THREAD) as u64));
-
-        for (name, factory) in implementations() {
-            let id = BenchmarkId::new(name, threads);
-            group.bench_with_input(id, &threads, |b, &threads| {
-                b.iter(|| {
-                    let pool = factory(threads);
-                    for i in 0..threads * pool_per_thread {
-                        pool.push_one(i);
-                    }
-
-                    let start = Arc::new(Barrier::new(threads + 1));
-                    let mut handles = Vec::new();
-                    for _ in 0..threads {
-                        let pool = Arc::clone(&pool);
-                        let start = Arc::clone(&start);
-                        handles.push(thread::spawn(move || {
-                            start.wait();
-                            let mut serviced = 0usize;
-                            for _ in 0..OPS_PER_THREAD {
-                                // A sharded scan may miss an existing object.
-                                // Retry without increasing the fixed pool size.
-                                let obj = loop {
-                                    if let Some(obj) = pool.pop_one() {
-                                        break obj;
-                                    }
-                                    thread::yield_now();
-                                };
-                                pool.push_one(obj);
-                                serviced += 1;
-                            }
-                            serviced
-                        }));
-                    }
-
-                    start.wait();
-                    let mut total = 0usize;
-                    for h in handles {
-                        total += h.join().unwrap();
-                    }
-                    total
-                });
-            });
+impl Retry {
+    fn yield_now(&mut self) {
+        thread::yield_now();
+        self.attempts += 1;
+        if self.attempts % 1_024 == 0 {
+            let now = Instant::now();
+            let since = self.since.get_or_insert(now);
+            assert!(
+                now.duration_since(*since) < Duration::from_secs(30),
+                "container operation stalled for 30 seconds; aborting benchmark"
+            );
         }
     }
+}
+
+fn push_wait<C: Container>(container: &C, mut value: usize) {
+    let mut retry = Retry::default();
+    while let Err(returned) = container.push_one(value) {
+        // In particular, an ArrayQueue retry must not discard a full-queue value.
+        value = returned;
+        retry.yield_now();
+    }
+}
+
+fn pop_wait<C: Container>(container: &C) -> usize {
+    let mut retry = Retry::default();
+    loop {
+        if let Some(value) = container.pop_one() {
+            return value;
+        }
+        retry.yield_now();
+    }
+}
+
+/// MPMC uses this many threads in each role: 2, 8, or 16 threads in total.
+const THREAD_COUNTS: [usize; 3] = [1, 4, 8];
+const OPS_PER_THREAD: usize = 20_000;
+const POOL_PER_THREAD: usize = 4;
+const MPMC_CAPACITY: usize = 1_024;
+
+fn bench_object_pool_for<C: Container>(group: &mut BenchmarkGroup<'_, WallTime>, name: &str) {
+    for threads in THREAD_COUNTS {
+        group.throughput(Throughput::Elements((threads * OPS_PER_THREAD) as u64));
+        group.bench_with_input(BenchmarkId::new(name, threads), &threads, |b, &threads| {
+            b.iter(|| {
+                let pool_size = threads * POOL_PER_THREAD;
+                let pool = Arc::new(C::new(threads, pool_size));
+                for value in 0..pool_size {
+                    push_wait(&*pool, value);
+                }
+
+                let start = Arc::new(Barrier::new(threads + 1));
+                let mut handles = Vec::with_capacity(threads);
+                for _ in 0..threads {
+                    let pool = Arc::clone(&pool);
+                    let start = Arc::clone(&start);
+                    handles.push(thread::spawn(move || {
+                        start.wait();
+                        for _ in 0..OPS_PER_THREAD {
+                            // A sharded scan may miss an existing object. Retry
+                            // without increasing the fixed pool size.
+                            let value = pop_wait(&*pool);
+                            push_wait(&*pool, value);
+                        }
+                        OPS_PER_THREAD
+                    }));
+                }
+
+                start.wait();
+                let serviced: usize = handles.into_iter().map(|h| h.join().unwrap()).sum();
+                assert_eq!(serviced, threads * OPS_PER_THREAD);
+                // With all workers joined, an empty scan is a stable result.
+                let mut remaining = Vec::with_capacity(pool_size);
+                while let Some(value) = pool.pop_one() {
+                    remaining.push(value);
+                }
+                remaining.sort_unstable();
+                assert_eq!(remaining, (0..pool_size).collect::<Vec<_>>());
+                serviced
+            });
+        });
+    }
+}
+
+fn bench_object_pool(c: &mut Criterion) {
+    let mut group = c.benchmark_group("object_pool");
+    bench_object_pool_for::<ConcurrentShardedStack<usize>>(&mut group, "sharded");
+    bench_object_pool_for::<LockFreeStack<usize>>(&mut group, "lockfree_lifo");
+    bench_object_pool_for::<Mutex<Vec<usize>>>(&mut group, "mutex_vec_lifo");
+    bench_object_pool_for::<SegQueue<usize>>(&mut group, "segqueue_fifo");
+    bench_object_pool_for::<ArrayQueue<usize>>(&mut group, "arrayqueue_fifo");
     group.finish();
 }
 
-/// Dedicated producers and consumers each process a fixed quota, avoiding
-/// an additional shared counter on every pop. Ordering is not measured.
-fn bench_mpmc(c: &mut Criterion) {
-    let mut group = c.benchmark_group("mpmc");
-
-    for &threads in &THREAD_COUNTS {
+fn bench_mpmc_for<C: Container>(group: &mut BenchmarkGroup<'_, WallTime>, name: &str) {
+    for threads in THREAD_COUNTS {
         let produced = threads * OPS_PER_THREAD;
         group.throughput(Throughput::Elements(produced as u64));
+        let id = BenchmarkId::new(name, format!("{threads}p_{threads}c"));
+        group.bench_with_input(id, &threads, |b, &threads| {
+            b.iter(|| {
+                let container = Arc::new(C::new(threads, MPMC_CAPACITY));
+                let start = Arc::new(Barrier::new(2 * threads + 1));
 
-        for (name, factory) in implementations() {
-            let id = BenchmarkId::new(name, format!("{threads}p_{threads}c"));
-            group.bench_with_input(id, &threads, |b, &threads| {
-                b.iter(|| {
-                    let stack = factory(threads);
-                    let start = Arc::new(Barrier::new(2 * threads + 1));
+                let mut producers = Vec::with_capacity(threads);
+                for producer in 0..threads {
+                    let container = Arc::clone(&container);
+                    let start = Arc::clone(&start);
+                    producers.push(thread::spawn(move || {
+                        start.wait();
+                        for i in 0..OPS_PER_THREAD {
+                            push_wait(&*container, producer * OPS_PER_THREAD + i);
+                        }
+                    }));
+                }
 
-                    let mut producers = Vec::new();
-                    for _ in 0..threads {
-                        let stack = Arc::clone(&stack);
-                        let start = Arc::clone(&start);
-                        producers.push(thread::spawn(move || {
-                            start.wait();
-                            for i in 0..OPS_PER_THREAD {
-                                stack.push_one(i);
-                            }
-                        }));
-                    }
+                let mut consumers = Vec::with_capacity(threads);
+                for _ in 0..threads {
+                    let container = Arc::clone(&container);
+                    let start = Arc::clone(&start);
+                    consumers.push(thread::spawn(move || {
+                        start.wait();
+                        let mut count = 0;
+                        let mut sum = 0u64;
+                        let mut xor = 0;
+                        for _ in 0..OPS_PER_THREAD {
+                            let value = pop_wait(&*container);
+                            assert!(value < produced);
+                            count += 1;
+                            sum += value as u64;
+                            xor ^= value;
+                        }
+                        (count, sum, xor)
+                    }));
+                }
 
-                    let mut consumers = Vec::new();
-                    for _ in 0..threads {
-                        let stack = Arc::clone(&stack);
-                        let start = Arc::clone(&start);
-                        consumers.push(thread::spawn(move || {
-                            start.wait();
-                            for _ in 0..OPS_PER_THREAD {
-                                while stack.pop_one().is_none() {
-                                    thread::yield_now();
-                                }
-                            }
-                            OPS_PER_THREAD
-                        }));
-                    }
-
-                    start.wait();
-                    for h in producers {
-                        h.join().unwrap();
-                    }
-                    let total: usize = consumers.into_iter().map(|h| h.join().unwrap()).sum();
-                    assert_eq!(total, produced);
-                    total
-                });
+                start.wait();
+                for producer in producers {
+                    producer.join().unwrap();
+                }
+                let (count, sum, xor) = consumers
+                    .into_iter()
+                    .map(|h| h.join().unwrap())
+                    .fold((0, 0u64, 0), |(count, sum, xor), (n, s, x)| {
+                        (count + n, sum + s, xor ^ x)
+                    });
+                assert_eq!(count, produced);
+                assert_eq!(sum, produced as u64 * (produced as u64 - 1) / 2);
+                assert_eq!(xor, (0..produced).fold(0, |acc, value| acc ^ value));
+                assert!(container.pop_one().is_none());
+                count
             });
-        }
+        });
     }
+}
+
+fn bench_mpmc(c: &mut Criterion) {
+    let mut group = c.benchmark_group("mpmc");
+    bench_mpmc_for::<ConcurrentShardedStack<usize>>(&mut group, "sharded");
+    bench_mpmc_for::<LockFreeStack<usize>>(&mut group, "lockfree_lifo");
+    bench_mpmc_for::<Mutex<Vec<usize>>>(&mut group, "mutex_vec_lifo");
+    bench_mpmc_for::<SegQueue<usize>>(&mut group, "segqueue_fifo");
+    bench_mpmc_for::<ArrayQueue<usize>>(&mut group, "arrayqueue_fifo");
     group.finish();
 }
 
