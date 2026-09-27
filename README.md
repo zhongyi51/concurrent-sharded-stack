@@ -68,7 +68,8 @@ assert_eq!(popped.len(), 4);
   `available_parallelism()`.
 - `with_concurrency(n)` — exact shard count (must be a non-zero power of two,
   with no upper bound beyond the obvious memory limit).
-- `push(value) -> Result<(), PushError<T>>` — fails only if the stack is closed.
+- `push(value) -> Result<(), PushError<T>>` — fails if the calling thread's shard
+  is closed.
 - `pop() -> Result<T, PopError>` — non-blocking; distinguishes `Empty` from
   `Closed`.
 - `close()` / `is_closed()` — graceful shutdown; existing elements remain
@@ -168,10 +169,11 @@ Raw criterion output is in `bench_0.2.1.txt` (gitignored via `bench_*.txt`).
 
 ## Changelog
 
-### Unreleased
+### 0.2.2 — 2026-09-27
 
 - Document weak empty scans and gradual closing, with deterministic tests.
-- Drain remaining payloads if one payload destructor panics.
+- Drain remaining payloads if one payload destructor panics, using `scopeguard`
+  to resume cleanup.
 - Correct benchmark worker labels, keep the object pool fixed, synchronize
   worker starts, and remove the MPMC progress-counter bottleneck.
 - Check the declared Rust 1.85 minimum in CI.

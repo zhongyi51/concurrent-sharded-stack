@@ -393,49 +393,32 @@ impl<T> ConcurrentShardedStack<T> {
 
 impl<T> Drop for ConcurrentShardedStack<T> {
     fn drop(&mut self) {
-        // Advance each head before running user code. If a payload destructor
-        // panics, this guard resumes draining the remaining nodes on unwind.
-        struct DrainGuard<'a, T> {
-            shards: &'a [CachePadded<Atomic<Node<T>>>],
-            shard_index: usize,
-            guard: &'a Guard,
-        }
-
-        impl<T> DrainGuard<'_, T> {
-            fn drain(&mut self) {
-                while let Some(shard) = self.shards.get(self.shard_index) {
-                    let current = shard.load(Ordering::Relaxed, self.guard);
+        let guard = &epoch::pin();
+        let drain = || {
+            for shard in &self.shards {
+                loop {
+                    let current = shard.load(Ordering::Relaxed, guard);
                     if current.is_null() {
-                        self.shard_index += 1;
-                        continue;
+                        break;
                     }
 
                     // SAFETY: dropping the stack requires exclusive access,
                     // so no operation can still access its reachable nodes.
-                    // Each allocation is removed from its shard exactly once.
+                    // Advance the head before user code so a panic leaves only
+                    // the remaining nodes reachable for the cleanup guard.
                     unsafe {
                         let mut node = Box::from_raw(current.as_raw() as *mut Node<T>);
-                        let next = node.next.load(Ordering::Relaxed, self.guard);
+                        let next = node.next.load(Ordering::Relaxed, guard);
                         shard.store(next, Ordering::Relaxed);
                         ManuallyDrop::drop(&mut node.value);
                     }
                 }
             }
-        }
-
-        impl<T> Drop for DrainGuard<'_, T> {
-            fn drop(&mut self) {
-                self.drain();
-            }
-        }
-
-        let guard = &epoch::pin();
-        let mut drain = DrainGuard {
-            shards: &self.shards,
-            shard_index: 0,
-            guard,
         };
-        drain.drain();
+
+        let cleanup = scopeguard::guard((), |_| drain());
+        drain();
+        scopeguard::ScopeGuard::into_inner(cleanup);
     }
 }
 
@@ -546,20 +529,22 @@ mod tests {
             }
         }
 
-        let drops = Arc::new(AtomicUsize::new(0));
-        let s = ConcurrentShardedStack::with_concurrency(2);
-        for (shard, panic) in [(0, false), (0, true), (1, false)] {
-            THREAD_ID.with(|id| id.set(shard));
-            assert!(
-                s.push(Payload {
-                    panic,
-                    drops: Arc::clone(&drops)
-                })
-                .is_ok()
-            );
+        for first_shard in [0, 2] {
+            let drops = Arc::new(AtomicUsize::new(0));
+            let s = ConcurrentShardedStack::with_concurrency(4);
+            for (shard, panic) in [(first_shard, false), (first_shard, true), (3, false)] {
+                THREAD_ID.with(|id| id.set(shard));
+                assert!(
+                    s.push(Payload {
+                        panic,
+                        drops: Arc::clone(&drops)
+                    })
+                    .is_ok()
+                );
+            }
+            assert!(catch_unwind(AssertUnwindSafe(|| drop(s))).is_err());
+            assert_eq!(drops.load(Ordering::Relaxed), 3);
         }
-        assert!(catch_unwind(AssertUnwindSafe(|| drop(s))).is_err());
-        assert_eq!(drops.load(Ordering::Relaxed), 3);
     }
 
     #[derive(Debug)]
