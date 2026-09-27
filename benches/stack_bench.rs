@@ -5,7 +5,7 @@
 //!
 //! * [`ConcurrentShardedStack`] — this crate,
 //! * [`lockfree::stack::Stack`] — the well-known lock-free stack crate on
-//!   crates.io, the natural apples-to-apples competitor.
+//!   crates.io. Unlike the sharded implementation, it provides global LIFO.
 //!
 //! The two scenarios model how a concurrent LIFO stack is actually used under
 //! load:
@@ -13,16 +13,13 @@
 //! * `object_pool` — a fixed pool of objects; every worker repeatedly *acquires*
 //!   (pop) and *releases* (push) one. This is the connection/buffer pool used
 //!   by web servers and thread pools.
-//! * `mpmc` — a LIFO work queue with dedicated producer and consumer threads
-//!   (fan-out). The LIFO ordering shows up as "newer items are popped first",
-//!   so the bench exercises the sharded stack under pure push/pop traffic
-//!   with no pre-fill.
+//! * `mpmc` — dedicated producer and consumer threads with no pre-fill.
+//!   Benchmark IDs give both counts, e.g. `4p_4c` means eight workers.
 //!
-//! Both run with thread counts that go well past the core count (up to 256),
-//! to reflect heavily oversubscribed servers rather than a tidy 4-thread demo.
+//! Workers share a start barrier. Thread creation and teardown remain inside
+//! the timed iteration, so these are end-to-end workload measurements.
 
-use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Barrier};
 use std::thread;
 
 use concurrent_sharded_stack::ConcurrentShardedStack;
@@ -53,10 +50,9 @@ impl Stackish for LockFreeStack<usize> {
     }
 }
 
-/// Shards are bounded by `usize::BITS`; cap the hint so high thread counts do
-/// not blow past the limit.
+/// Round the workload's shard hint to the required power of two.
 fn shard_hint(threads: usize) -> usize {
-    threads.next_power_of_two().min(usize::BITS as usize)
+    threads.next_power_of_two()
 }
 
 /// The two implementations, as factories taking the thread count (the sharded
@@ -74,9 +70,7 @@ fn implementations() -> [(&'static str, Factory); 2] {
     ]
 }
 
-/// Representative ECS shapes:
-/// * 4 threads — low-end 2 vCPU ECS (entry shared / 1c2g, hyper-threaded).
-/// * 32 threads — high-end 16 vCPU ECS (compute-optimized, hyper-threaded).
+/// Object-pool worker counts; MPMC uses this many workers in each role.
 const THREAD_COUNTS: [usize; 2] = [4, 32];
 const OPS_PER_THREAD: usize = 20_000;
 
@@ -101,15 +95,23 @@ fn bench_object_pool(c: &mut Criterion) {
                         pool.push_one(i);
                     }
 
+                    let start = Arc::new(Barrier::new(threads + 1));
                     let mut handles = Vec::new();
                     for _ in 0..threads {
                         let pool = Arc::clone(&pool);
+                        let start = Arc::clone(&start);
                         handles.push(thread::spawn(move || {
+                            start.wait();
                             let mut serviced = 0usize;
                             for _ in 0..OPS_PER_THREAD {
-                                // Acquire; if the pool is momentarily empty, just
-                                // release a fresh object (pool grows slightly).
-                                let obj = pool.pop_one().unwrap_or(0);
+                                // A sharded scan may miss an existing object.
+                                // Retry without increasing the fixed pool size.
+                                let obj = loop {
+                                    if let Some(obj) = pool.pop_one() {
+                                        break obj;
+                                    }
+                                    thread::yield_now();
+                                };
                                 pool.push_one(obj);
                                 serviced += 1;
                             }
@@ -117,6 +119,7 @@ fn bench_object_pool(c: &mut Criterion) {
                         }));
                     }
 
+                    start.wait();
                     let mut total = 0usize;
                     for h in handles {
                         total += h.join().unwrap();
@@ -129,11 +132,8 @@ fn bench_object_pool(c: &mut Criterion) {
     group.finish();
 }
 
-/// LIFO queue workload: dedicated producers fan items in, dedicated consumers
-/// drain them. Consumers stop once the global popped count reaches everything
-/// the producers pushed. The stack ordering means the most recently pushed
-/// items are popped first, so this is a stress test of the core push/pop path
-/// under concurrent traffic.
+/// Dedicated producers and consumers each process a fixed quota, avoiding
+/// an additional shared counter on every pop. Ordering is not measured.
 fn bench_mpmc(c: &mut Criterion) {
     let mut group = c.benchmark_group("mpmc");
 
@@ -142,16 +142,18 @@ fn bench_mpmc(c: &mut Criterion) {
         group.throughput(Throughput::Elements(produced as u64));
 
         for (name, factory) in implementations() {
-            let id = BenchmarkId::new(name, threads);
+            let id = BenchmarkId::new(name, format!("{threads}p_{threads}c"));
             group.bench_with_input(id, &threads, |b, &threads| {
                 b.iter(|| {
                     let stack = factory(threads);
-                    let popped_total = Arc::new(AtomicUsize::new(0));
+                    let start = Arc::new(Barrier::new(2 * threads + 1));
 
                     let mut producers = Vec::new();
                     for _ in 0..threads {
                         let stack = Arc::clone(&stack);
+                        let start = Arc::clone(&start);
                         producers.push(thread::spawn(move || {
+                            start.wait();
                             for i in 0..OPS_PER_THREAD {
                                 stack.push_one(i);
                             }
@@ -161,25 +163,25 @@ fn bench_mpmc(c: &mut Criterion) {
                     let mut consumers = Vec::new();
                     for _ in 0..threads {
                         let stack = Arc::clone(&stack);
-                        let popped_total = Arc::clone(&popped_total);
+                        let start = Arc::clone(&start);
                         consumers.push(thread::spawn(move || {
-                            while popped_total.load(Ordering::Relaxed) < produced {
-                                if stack.pop_one().is_some() {
-                                    popped_total.fetch_add(1, Ordering::Relaxed);
-                                } else {
+                            start.wait();
+                            for _ in 0..OPS_PER_THREAD {
+                                while stack.pop_one().is_none() {
                                     thread::yield_now();
                                 }
                             }
+                            OPS_PER_THREAD
                         }));
                     }
 
+                    start.wait();
                     for h in producers {
                         h.join().unwrap();
                     }
-                    for h in consumers {
-                        h.join().unwrap();
-                    }
-                    popped_total.load(Ordering::Relaxed)
+                    let total: usize = consumers.into_iter().map(|h| h.join().unwrap()).sum();
+                    assert_eq!(total, produced);
+                    total
                 });
             });
         }

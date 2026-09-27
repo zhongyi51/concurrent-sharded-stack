@@ -46,7 +46,7 @@ fn current_thread_id() -> usize {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum PushError<T> {
-    /// The stack has been closed.
+    /// The target shard has been closed.
     Closed(T),
 }
 
@@ -70,7 +70,9 @@ impl<T: fmt::Debug> std::error::Error for PushError<T> {}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PopError {
+    /// No item was found by this scan; concurrent activity may hide items.
     Empty,
+    /// Every shard was observed closed and empty; no later push can succeed.
     Closed,
 }
 
@@ -106,6 +108,11 @@ enum ShardPopResult<T> {
 }
 
 /// Concurrent sharded Treiber stack.
+///
+/// Ordering is LIFO within each shard, not across shards. An unsuccessful
+/// [`pop`](Self::pop) is a scan, not an atomic snapshot: `Empty` can be returned
+/// even when the stack remained nonempty throughout the call. Closing also
+/// takes effect one shard at a time; see [`close`](Self::close).
 pub struct ConcurrentShardedStack<T> {
     shards: Box<[CachePadded<Atomic<Node<T>>>]>,
     shard_index_mask: usize,
@@ -158,7 +165,10 @@ impl<T> ConcurrentShardedStack<T> {
 
     /// Pushes a value into the stack.
     ///
-    /// Returns `Err(PushError::Closed(value))` if the stack is already closed.
+    /// Returns `Err(PushError::Closed(value))` if this thread's shard is closed.
+    /// While [`close`](Self::close) is in progress, some shards may reject
+    /// pushes while others still accept them. After `close` returns, every
+    /// shard rejects pushes.
     pub fn push(&self, value: T) -> Result<(), PushError<T>> {
         let shard_index = self.current_shard_index();
         let shard = &self.shards[shard_index];
@@ -221,10 +231,15 @@ impl<T> ConcurrentShardedStack<T> {
     /// ```
     ///
     /// Returns `Err(PopError::Empty)` if no element is found and at least one
-    /// shard is still observed open.
+    /// shard is still observed open. This is not a consistent snapshot: other
+    /// threads can push into an already-scanned shard and drain a later shard,
+    /// so `Empty` can occur even if the stack was never globally empty during
+    /// the call. Consumers with active producers should retry rather than use
+    /// `Empty` as a completion signal.
     ///
     /// Returns `Err(PopError::Closed)` if no element is found and every shard
-    /// is observed closed.
+    /// is observed closed. Unlike `Empty`, this is terminal: closed shards
+    /// cannot receive more elements.
     pub fn pop(&self) -> Result<T, PopError> {
         let guard = &epoch::pin();
         let start = self.current_shard_index();
@@ -242,6 +257,8 @@ impl<T> ConcurrentShardedStack<T> {
                 }
                 ShardPopResult::EmptyAndClosed => {}
             }
+            #[cfg(test)]
+            tests::after_empty_shard_scan();
         }
 
         if all_closed {
@@ -251,7 +268,15 @@ impl<T> ConcurrentShardedStack<T> {
         }
     }
 
-    /// Closes the stack. Existing elements can still be popped.
+    /// Closes every shard. Existing elements can still be popped.
+    ///
+    /// Closure propagates one shard at a time. During the call, a push can be
+    /// rejected on one shard while a later push succeeds on another, and
+    /// [`is_closed`](Self::is_closed) can still return `false` after a rejected
+    /// push. Once this method returns, all shards are closed.
+    ///
+    /// Returns `true` if this call closed at least one shard. Concurrent calls
+    /// can both return `true`; the result does not identify a unique closer.
     pub fn close(&self) -> bool {
         let guard = &epoch::pin();
         let mut changed = false;
@@ -273,6 +298,8 @@ impl<T> ConcurrentShardedStack<T> {
                 ) {
                     Ok(_) => {
                         changed = true;
+                        #[cfg(test)]
+                        tests::after_shard_closed();
                         break;
                     }
                     Err(_) => spin_loop(),
@@ -283,7 +310,7 @@ impl<T> ConcurrentShardedStack<T> {
         changed
     }
 
-    /// Checks if the stack is closed.
+    /// Checks whether every shard is closed.
     pub fn is_closed(&self) -> bool {
         let guard = &epoch::pin();
         self.all_shards_closed(guard)
@@ -367,36 +394,158 @@ impl<T> ConcurrentShardedStack<T> {
 impl<T> Drop for ConcurrentShardedStack<T> {
     fn drop(&mut self) {
         let guard = &epoch::pin();
+        let drain = || {
+            for shard in &self.shards {
+                loop {
+                    let current = shard.load(Ordering::Relaxed, guard);
+                    if current.is_null() {
+                        break;
+                    }
 
-        for shard in self.shards.iter() {
-            let mut current = shard.load(Ordering::Relaxed, guard);
-
-            while !current.is_null() {
-                unsafe {
-                    let raw = current.as_raw() as *mut Node<T>;
-                    let next = (*raw).next.load(Ordering::Relaxed, guard);
-
-                    let mut node = Box::from_raw(raw);
-
-                    // The value was never popped, so we are responsible for
-                    // dropping it here. It lives inside a `ManuallyDrop<T>`.
-                    ManuallyDrop::drop(&mut node.value);
-
-                    drop(node);
-
-                    current = next;
+                    // SAFETY: dropping the stack requires exclusive access,
+                    // so no operation can still access its reachable nodes.
+                    // Advance the head before user code so a panic leaves only
+                    // the remaining nodes reachable for the cleanup guard.
+                    unsafe {
+                        let mut node = Box::from_raw(current.as_raw() as *mut Node<T>);
+                        let next = node.next.load(Ordering::Relaxed, guard);
+                        shard.store(next, Ordering::Relaxed);
+                        ManuallyDrop::drop(&mut node.value);
+                    }
                 }
             }
-        }
+        };
+
+        let cleanup = scopeguard::guard((), |_| drain());
+        drain();
+        scopeguard::ScopeGuard::into_inner(cleanup);
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, AtomicUsize};
+    use std::sync::{Arc, mpsc};
     use std::time::{Duration, Instant};
+
+    // One-shot, per-thread hooks expose deterministic interleavings without
+    // adding any instructions to non-test builds.
+    type TestHook = Box<dyn FnOnce()>;
+    thread_local! {
+        static AFTER_EMPTY_SHARD: Cell<Option<TestHook>> = const { Cell::new(None) };
+        static AFTER_SHARD_CLOSED: Cell<Option<TestHook>> = const { Cell::new(None) };
+    }
+
+    pub(super) fn after_empty_shard_scan() {
+        AFTER_EMPTY_SHARD.with(|hook| {
+            if let Some(hook) = hook.take() {
+                hook();
+            }
+        });
+    }
+
+    pub(super) fn after_shard_closed() {
+        AFTER_SHARD_CLOSED.with(|hook| {
+            if let Some(hook) = hook.take() {
+                hook();
+            }
+        });
+    }
+
+    #[test]
+    fn empty_scan_is_not_a_global_snapshot() {
+        let s = Arc::new(ConcurrentShardedStack::with_concurrency(2));
+        THREAD_ID.with(|id| id.set(1));
+        s.push("original").unwrap();
+
+        let (scanned_tx, scanned_rx) = mpsc::channel();
+        let (resume_tx, resume_rx) = mpsc::channel();
+        let stack = Arc::clone(&s);
+        let popper = thread::spawn(move || {
+            THREAD_ID.with(|id| id.set(0));
+            AFTER_EMPTY_SHARD.with(|hook| {
+                hook.set(Some(Box::new(move || {
+                    scanned_tx.send(()).unwrap();
+                    resume_rx.recv().unwrap();
+                })));
+            });
+            stack.pop()
+        });
+
+        scanned_rx.recv_timeout(Duration::from_secs(30)).unwrap();
+        THREAD_ID.with(|id| id.set(0));
+        s.push("replacement").unwrap();
+        THREAD_ID.with(|id| id.set(1));
+        assert_eq!(s.pop(), Ok("original"));
+        // At least one item has existed throughout the pending pop.
+        resume_tx.send(()).unwrap();
+        assert_eq!(popper.join().unwrap(), Err(PopError::Empty));
+        assert_eq!(s.pop(), Ok("replacement"));
+    }
+
+    #[test]
+    fn close_propagates_per_shard_and_can_have_multiple_winners() {
+        let s = Arc::new(ConcurrentShardedStack::with_concurrency(2));
+        let (closed_tx, closed_rx) = mpsc::channel();
+        let (resume_tx, resume_rx) = mpsc::channel();
+        let stack = Arc::clone(&s);
+        let closer = thread::spawn(move || {
+            AFTER_SHARD_CLOSED.with(|hook| {
+                hook.set(Some(Box::new(move || {
+                    closed_tx.send(()).unwrap();
+                    resume_rx.recv().unwrap();
+                })));
+            });
+            stack.close()
+        });
+
+        closed_rx.recv_timeout(Duration::from_secs(30)).unwrap();
+        THREAD_ID.with(|id| id.set(0));
+        assert_eq!(s.push(1), Err(PushError::Closed(1)));
+        assert!(!s.is_closed());
+        THREAD_ID.with(|id| id.set(1));
+        assert_eq!(s.push(2), Ok(()));
+        assert!(s.close());
+        assert!(s.is_closed());
+        resume_tx.send(()).unwrap();
+        assert!(closer.join().unwrap());
+        assert_eq!(s.pop(), Ok(2));
+        assert_eq!(s.pop(), Err(PopError::Closed));
+    }
+
+    #[test]
+    fn payload_panic_still_drops_remaining_nodes_and_shards() {
+        use std::panic::{AssertUnwindSafe, catch_unwind};
+
+        struct Payload {
+            panic: bool,
+            drops: Arc<AtomicUsize>,
+        }
+        impl Drop for Payload {
+            fn drop(&mut self) {
+                self.drops.fetch_add(1, Ordering::Relaxed);
+                assert!(!self.panic, "payload destructor panic");
+            }
+        }
+
+        for first_shard in [0, 2] {
+            let drops = Arc::new(AtomicUsize::new(0));
+            let s = ConcurrentShardedStack::with_concurrency(4);
+            for (shard, panic) in [(first_shard, false), (first_shard, true), (3, false)] {
+                THREAD_ID.with(|id| id.set(shard));
+                assert!(
+                    s.push(Payload {
+                        panic,
+                        drops: Arc::clone(&drops)
+                    })
+                    .is_ok()
+                );
+            }
+            assert!(catch_unwind(AssertUnwindSafe(|| drop(s))).is_err());
+            assert_eq!(drops.load(Ordering::Relaxed), 3);
+        }
+    }
 
     #[derive(Debug)]
     struct DropCounter {
@@ -551,8 +700,8 @@ mod tests {
 
         assert_eq!(popped, 50);
 
-        // Force any deferred reclamation to run. Even after reclamation, the
-        // count must stay at exactly 50 (no double-drop from `defer_destroy`).
+        // Request reclamation; flush does not guarantee that every deferred
+        // callback runs here. Payloads must already have been dropped by pop.
         drop(s);
         epoch::pin().flush();
 

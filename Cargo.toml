@@ -1,6 +1,6 @@
 [package]
 name = "concurrent-sharded-stack"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2024"
 rust-version = "1.85"
 description = "A lock-free concurrent stack that shards a Treiber stack per thread and reclaims memory with epoch-based GC."
@@ -14,6 +14,7 @@ publish = ["crates-io"]
 [dependencies]
 crossbeam-epoch = "0.9"
 crossbeam-utils = "0.8"
+scopeguard = "1.2"
 
 [dev-dependencies]
 criterion = "0.5"
