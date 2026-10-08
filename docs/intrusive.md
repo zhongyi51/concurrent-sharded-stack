@@ -47,7 +47,15 @@ A second destructor panic during unwinding aborts, as with standard containers.
 
 ## Delivering callbacks
 
-`intrusive::collect()` pins, flushes deferred work, and unpins. Repeated calls
+`defer` batches callbacks in the calling thread's epoch cache instead of flushing
+on every node. Dropped tokens use the same cache. Call `intrusive::collect()` on
+each retiring thread before waiting for callbacks or becoming idle; another
+thread cannot flush its cache. Thread exit also publishes pending callbacks.
+Flushing once per work batch (or when the pool is empty) amortizes reclamation
+metadata allocation and global queue contention. Flushing after every node
+restores eager publication but loses this benefit.
+
+`intrusive::collect()` pins, flushes that thread's deferred work, and unpins. Repeated calls
 help make progress, but provide no delivery deadline. Release any externally
 held epoch guards while waiting. Delivery may run on another thread and is not
 guaranteed at process exit; applications that need completion must count or

@@ -143,11 +143,17 @@ where
     /// and 'static; panics propagate on the collecting thread. Delivery has no
     /// time bound and is not guaranteed at process exit. [`collect`] helps drive
     /// progress but does not synchronously wait for callbacks.
+    ///
+    /// Callbacks are batched in the **calling thread's** epoch cache. Call
+    /// [`collect`] on that thread before waiting for delivery or becoming idle;
+    /// collection on another thread cannot flush this cache. Thread exit also
+    /// flushes it. Dropping a `Retired` uses the same batching policy.
     pub fn defer(self, callback: impl FnOnce(Pointer<A>) + Send + 'static) {
         let guard = epoch::pin();
         // SAFETY: this callback runs only after pre-existing readers unpin.
         guard.defer(move || callback(unsafe { self.reclaim() }));
-        guard.flush();
+        // Let epoch fill its local bag. Flushing every node allocates a whole
+        // bag per callback and contends on the global reclamation queue.
     }
 
     // Caller guarantees all old readers of this node have finished.
@@ -177,8 +183,10 @@ where
     }
 }
 
-/// Helps advance the global epoch collector and flush deferred callbacks.
+/// Flushes this thread's deferred callbacks and helps advance global collection.
 ///
+/// Call on each retiring thread before it waits or becomes idle, including after
+/// dropping `Retired` tokens. Other threads cannot flush its local cache.
 /// This is not a grace-period barrier. Call periodically while awaiting retired
 /// nodes, releasing every epoch guard between calls. A stalled pinned thread
 /// can indefinitely delay reclamation. Epoch metadata may allocate internally.

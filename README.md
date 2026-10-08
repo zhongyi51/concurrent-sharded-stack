@@ -61,8 +61,10 @@ stack.pop().unwrap().defer(|entry| {
 ```
 
 A popped node stays claimed until callback delivery; immediately returning a
-`Box` or reusing its link would invalidate concurrent readers. Periodically call
-`intrusive::collect()` while awaiting callbacks. It advances collection, but is
+`Box` or reusing its link would invalidate concurrent readers. Retirement is
+batched: call `intrusive::collect()` **on each retiring thread before it waits or
+becomes idle**, and periodically while awaiting callbacks. Another thread cannot
+flush that thread's pending batch; thread exit also flushes it. Collection is
 not a synchronous barrier; a pinned thread can indefinitely delay delivery.
 Dropping `Retired` schedules destruction instead. Epoch bookkeeping and large
 callbacks may allocate, although the stack never allocates wrapper nodes.
@@ -84,7 +86,7 @@ cargo run --example intrusive_recycling
 - `PopError::Closed` means all shards are closed and drained. Intrusive callbacks
   may still be pending; neither `close()` nor stack destruction waits for them.
 
-[Benchmarks](docs/benchmarks/2026-10-08-intrusive.md) measure completed delivery,
+[Benchmarks and profiling](docs/benchmarks/2026-10-08-retirement-fix.md) measure completed delivery,
 including the epoch cost. [Validation and contribution guide](CONTRIBUTING.md).
 [Changelog](CHANGELOG.md). Licensed under [Apache-2.0](LICENSE-APACHE) or
 [MIT](LICENSE-MIT), at your option.

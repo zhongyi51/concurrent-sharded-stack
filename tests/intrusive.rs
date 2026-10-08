@@ -82,6 +82,9 @@ fn old_reader_prevents_delivery_release_and_reinsertion() {
     let retired = stack.pop().unwrap();
     let (tx, rx) = mpsc::channel();
     retired.defer(move |node| tx.send(node).unwrap());
+    // Publish the partial batch while the old reader is still pinned: a missing
+    // flush must not be the reason the following delivery assertion passes.
+    intrusive::collect();
     thread::spawn(|| {
         for _ in 0..64 {
             intrusive::collect();
@@ -116,6 +119,57 @@ fn retired_token_outlives_stack_and_can_move_between_threads() {
     let node = thread::spawn(move || receive(retired)).join().unwrap();
     assert_eq!(node.id, 9);
     assert!(!node.link.is_linked());
+}
+
+#[test]
+fn flushed_partial_batch_can_be_collected_while_retiring_thread_is_idle() {
+    let stack = IntrusiveShardedStack::with_concurrency(1, BoxAdapter::new());
+    stack.push(entry(7)).unwrap();
+    let retired = stack.pop().unwrap();
+    // Ensure the retiring thread cannot deliver its own callback before idle.
+    let old_reader = crossbeam_epoch::pin();
+    let (ready_tx, ready_rx) = mpsc::channel();
+    let (stop_tx, stop_rx) = mpsc::channel();
+    let (node_tx, node_rx) = mpsc::channel();
+    let worker = thread::spawn(move || {
+        retired.defer(move |node| node_tx.send(node).unwrap());
+        intrusive::collect();
+        ready_tx.send(()).unwrap();
+        stop_rx.recv().unwrap();
+    });
+    ready_rx.recv().unwrap();
+    assert!(node_rx.try_recv().is_err());
+    drop(old_reader);
+    let mut delivered = None;
+    drive_until(|| {
+        delivered = node_rx.try_recv().ok();
+        delivered.is_some()
+    });
+    let node = delivered.unwrap();
+    assert_eq!(node.id, 7);
+    assert!(!node.link.is_linked());
+    stop_tx.send(()).unwrap();
+    worker.join().unwrap();
+}
+
+#[test]
+fn thread_exit_flushes_partial_retirement_batch() {
+    let stack = IntrusiveShardedStack::with_concurrency(1, BoxAdapter::new());
+    stack.push(entry(11)).unwrap();
+    let retired = stack.pop().unwrap();
+    let old_reader = crossbeam_epoch::pin();
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || retired.defer(move |node| tx.send(node).unwrap()))
+        .join()
+        .unwrap();
+    assert!(rx.try_recv().is_err());
+    drop(old_reader);
+    let mut delivered = None;
+    drive_until(|| {
+        delivered = rx.try_recv().ok();
+        delivered.is_some()
+    });
+    assert_eq!(delivered.unwrap().id, 11);
 }
 
 #[test]

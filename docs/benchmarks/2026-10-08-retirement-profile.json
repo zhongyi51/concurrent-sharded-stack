@@ -1,0 +1,449 @@
+{
+  "method": "Samply Windows ETW; self attribution weighted by threadCPUDelta; whole benchmark process; matching local PDBs resolved using dbghelp",
+  "profiles": {
+    "before-symbols": {
+      "sampled_stacks": 89247,
+      "thread_cpu_delta_total": 62025435,
+      "top_self": [
+        {
+          "symbol": "crossbeam_epoch::internal::Global::collect",
+          "cpu_delta": 18697237,
+          "percent": 30.14446734633945
+        },
+        {
+          "symbol": "crossbeam_epoch::internal::Local::flush",
+          "cpu_delta": 17930971,
+          "percent": 28.909061258498227
+        },
+        {
+          "symbol": "fun_11130",
+          "cpu_delta": 4189575,
+          "percent": 6.754608008795102
+        },
+        {
+          "symbol": "crossbeam_epoch::deferred::impl$1::new::call<crossbeam_epoch::guard::impl$0::defer_unchecked::closure_env$0<concurrent_sharded_stack::intrusive::impl$2::defer::closure_env$0<intrusive_bench::NodeAdapter,intrusive_bench::transfer::closure$1::closure$1::closure$0::closure_env$0<concurrent_sharded_stack::intrusive::IntrusiveShardedStack<intrusive_bench::NodeAdapter> > >,tuple$<> > >",
+          "cpu_delta": 3474893,
+          "percent": 5.6023678028215365
+        },
+        {
+          "symbol": "RtlFreeHeap",
+          "cpu_delta": 3036364,
+          "percent": 4.895353011228377
+        },
+        {
+          "symbol": "crossbeam_epoch::internal::Global::try_advance",
+          "cpu_delta": 2961534,
+          "percent": 4.774708956091964
+        },
+        {
+          "symbol": "crossbeam_epoch::default::with_handle<crossbeam_epoch::default::pin::closure_env$0,crossbeam_epoch::guard::Guard>",
+          "cpu_delta": 2145745,
+          "percent": 3.4594598167671053
+        },
+        {
+          "symbol": "intrusive_bench::wait<intrusive_bench::transfer::closure$1::closure$1::closure_env$0<concurrent_sharded_stack::intrusive::IntrusiveShardedStack<intrusive_bench::NodeAdapter> > >",
+          "cpu_delta": 2018817,
+          "percent": 3.254821187469302
+        },
+        {
+          "symbol": "fun_26e50",
+          "cpu_delta": 1907347,
+          "percent": 3.0751045921725497
+        },
+        {
+          "symbol": "concurrent_sharded_stack::intrusive::IntrusiveShardedStack<intrusive_bench::NodeAdapter>::pop<intrusive_bench::NodeAdapter>",
+          "cpu_delta": 1728302,
+          "percent": 2.7864407561188407
+        },
+        {
+          "symbol": "intrusive_bench::impl$1::push",
+          "cpu_delta": 583611,
+          "percent": 0.9409220588295754
+        },
+        {
+          "symbol": "RtlQueryPerformanceCounter",
+          "cpu_delta": 458917,
+          "percent": 0.7398851777500633
+        },
+        {
+          "symbol": "intrusive_bench-e1ff0325534bb5d4.exe!0x1d3653",
+          "cpu_delta": 398120,
+          "percent": 0.6418657120260423
+        },
+        {
+          "symbol": "NtWaitForAlertByThreadId",
+          "cpu_delta": 331677,
+          "percent": 0.5347435290054797
+        },
+        {
+          "symbol": "std::sys::pal::windows::time::perf_counter::impl$1::from",
+          "cpu_delta": 272785,
+          "percent": 0.4397953839420876
+        },
+        {
+          "symbol": "crossbeam_epoch::internal::Local::defer",
+          "cpu_delta": 240781,
+          "percent": 0.3881971968435207
+        },
+        {
+          "symbol": "intrusive_bench-e1ff0325534bb5d4.exe!0x1d363c",
+          "cpu_delta": 111843,
+          "percent": 0.180317961494345
+        },
+        {
+          "symbol": "intrusive_bench::impl$1::pop_into<intrusive_bench::transfer::closure$1::closure$1::closure$0::closure_env$0<concurrent_sharded_stack::intrusive::IntrusiveShardedStack<intrusive_bench::NodeAdapter> > >",
+          "cpu_delta": 94557,
+          "percent": 0.15244874945254314
+        },
+        {
+          "symbol": "fun_2677e",
+          "cpu_delta": 77359,
+          "percent": 0.12472141469060233
+        },
+        {
+          "symbol": "fun_d1cd1",
+          "cpu_delta": 63295,
+          "percent": 0.10204684578189577
+        },
+        {
+          "symbol": "fun_164b60",
+          "cpu_delta": 58766,
+          "percent": 0.09474500259450014
+        },
+        {
+          "symbol": "fun_e34a0",
+          "cpu_delta": 57396,
+          "percent": 0.09253623130575384
+        },
+        {
+          "symbol": "fun_115ca",
+          "cpu_delta": 54848,
+          "percent": 0.08842823915704905
+        },
+        {
+          "symbol": "RtlAllocateHeap",
+          "cpu_delta": 49433,
+          "percent": 0.07969794972014303
+        },
+        {
+          "symbol": "GetProcessHeap",
+          "cpu_delta": 48077,
+          "percent": 0.07751174981682918
+        }
+      ],
+      "collector_self": [
+        {
+          "symbol": "crossbeam_epoch::internal::Local::flush",
+          "cpu_delta": 17930971,
+          "percent": 28.909061258498227
+        },
+        {
+          "symbol": "crossbeam_epoch::internal::Global::collect",
+          "cpu_delta": 18697237,
+          "percent": 30.14446734633945
+        },
+        {
+          "symbol": "crossbeam_epoch::internal::Global::try_advance",
+          "cpu_delta": 2961534,
+          "percent": 4.774708956091964
+        }
+      ]
+    },
+    "after": {
+      "sampled_stacks": 108636,
+      "thread_cpu_delta_total": 70852612,
+      "top_self": [
+        {
+          "symbol": "crossbeam_epoch::deferred::impl$1::new::call<crossbeam_epoch::guard::impl$0::defer_unchecked::closure_env$0<concurrent_sharded_stack::intrusive::impl$2::defer::closure_env$0<intrusive_bench::NodeAdapter,intrusive_bench::transfer::closure$1::closure$1::closure$0::closure_env$0<concurrent_sharded_stack::intrusive::IntrusiveShardedStack<intrusive_bench::NodeAdapter> > >,tuple$<> > >",
+          "cpu_delta": 22478229,
+          "percent": 31.72533568698921
+        },
+        {
+          "symbol": "intrusive_bench::wait<intrusive_bench::transfer::closure$1::closure$1::closure_env$0<concurrent_sharded_stack::intrusive::IntrusiveShardedStack<intrusive_bench::NodeAdapter> > >",
+          "cpu_delta": 12046554,
+          "percent": 17.00227226626451
+        },
+        {
+          "symbol": "concurrent_sharded_stack::intrusive::IntrusiveShardedStack<intrusive_bench::NodeAdapter>::pop<intrusive_bench::NodeAdapter>",
+          "cpu_delta": 11180985,
+          "percent": 15.780624996577401
+        },
+        {
+          "symbol": "RtlFreeHeap",
+          "cpu_delta": 5178945,
+          "percent": 7.309462352637049
+        },
+        {
+          "symbol": "intrusive_bench::impl$1::push",
+          "cpu_delta": 4896386,
+          "percent": 6.9106640698016895
+        },
+        {
+          "symbol": "crossbeam_epoch::default::with_handle<crossbeam_epoch::default::pin::closure_env$0,crossbeam_epoch::guard::Guard>",
+          "cpu_delta": 3611397,
+          "percent": 5.097055560915665
+        },
+        {
+          "symbol": "fun_26e50",
+          "cpu_delta": 2667885,
+          "percent": 3.765401055362645
+        },
+        {
+          "symbol": "intrusive_bench-e1ff0325534bb5d4.exe!0x1d37c3",
+          "cpu_delta": 1741803,
+          "percent": 2.45834691316673
+        },
+        {
+          "symbol": "RtlQueryPerformanceCounter",
+          "cpu_delta": 1240242,
+          "percent": 1.750453462463741
+        },
+        {
+          "symbol": "std::sys::pal::windows::time::perf_counter::impl$1::from",
+          "cpu_delta": 885593,
+          "percent": 1.2499087542460678
+        },
+        {
+          "symbol": "crossbeam_epoch::internal::Local::defer",
+          "cpu_delta": 644465,
+          "percent": 0.9095853798586847
+        },
+        {
+          "symbol": "intrusive_bench-e1ff0325534bb5d4.exe!0x1d37ac",
+          "cpu_delta": 558701,
+          "percent": 0.7885397365449279
+        },
+        {
+          "symbol": "fun_164b60",
+          "cpu_delta": 359827,
+          "percent": 0.5078528368156703
+        },
+        {
+          "symbol": "NtWaitForAlertByThreadId",
+          "cpu_delta": 334392,
+          "percent": 0.47195437198560863
+        },
+        {
+          "symbol": "fun_11130",
+          "cpu_delta": 242772,
+          "percent": 0.3426436840465388
+        },
+        {
+          "symbol": "crossbeam_epoch::internal::Global::collect",
+          "cpu_delta": 211959,
+          "percent": 0.29915481450422743
+        },
+        {
+          "symbol": "intrusive_bench::impl$1::pop_into<intrusive_bench::transfer::closure$1::closure$1::closure$0::closure_env$0<concurrent_sharded_stack::intrusive::IntrusiveShardedStack<intrusive_bench::NodeAdapter> > >",
+          "cpu_delta": 202135,
+          "percent": 0.2852894117721447
+        },
+        {
+          "symbol": "fun_2677e",
+          "cpu_delta": 168053,
+          "percent": 0.23718673914237628
+        },
+        {
+          "symbol": "crossbeam_epoch::internal::Global::try_advance",
+          "cpu_delta": 166744,
+          "percent": 0.2353392419745937
+        },
+        {
+          "symbol": "fun_164ba0",
+          "cpu_delta": 127132,
+          "percent": 0.17943163478574367
+        },
+        {
+          "symbol": "RtlAllocateHeap",
+          "cpu_delta": 113898,
+          "percent": 0.1607534243056558
+        },
+        {
+          "symbol": "fun_d1cd1",
+          "cpu_delta": 95378,
+          "percent": 0.13461465612587437
+        },
+        {
+          "symbol": "intrusive_bench-e1ff0325534bb5d4.exe!0x1d37d0",
+          "cpu_delta": 87309,
+          "percent": 0.1232262262963573
+        },
+        {
+          "symbol": "std::alloc::__default_lib_allocator::__rdl_dealloc",
+          "cpu_delta": 83838,
+          "percent": 0.11832732433350517
+        },
+        {
+          "symbol": "GetProcessHeap",
+          "cpu_delta": 82094,
+          "percent": 0.11586587661722338
+        }
+      ],
+      "collector_self": [
+        {
+          "symbol": "crossbeam_epoch::internal::Local::flush",
+          "cpu_delta": 24,
+          "percent": 3.387313371029991e-05
+        },
+        {
+          "symbol": "crossbeam_epoch::internal::Global::collect",
+          "cpu_delta": 211959,
+          "percent": 0.29915481450422743
+        },
+        {
+          "symbol": "crossbeam_epoch::internal::Global::try_advance",
+          "cpu_delta": 166744,
+          "percent": 0.2353392419745937
+        }
+      ]
+    },
+    "pool-after": {
+      "sampled_stacks": 56652,
+      "thread_cpu_delta_total": 31304423,
+      "top_self": [
+        {
+          "symbol": "concurrent_sharded_stack::intrusive::IntrusiveShardedStack<intrusive_bench::NodeAdapter>::pop<intrusive_bench::NodeAdapter>",
+          "cpu_delta": 4594689,
+          "percent": 14.677443503750252
+        },
+        {
+          "symbol": "crossbeam_epoch::internal::Local::flush",
+          "cpu_delta": 4087037,
+          "percent": 13.055781286880771
+        },
+        {
+          "symbol": "intrusive_bench::wait<intrusive_bench::recycling::closure$1::closure$0::closure_env$0<concurrent_sharded_stack::intrusive::IntrusiveShardedStack<intrusive_bench::NodeAdapter> > >",
+          "cpu_delta": 3141514,
+          "percent": 10.035367845623604
+        },
+        {
+          "symbol": "crossbeam_epoch::deferred::impl$1::new::call<crossbeam_epoch::guard::impl$0::defer_unchecked::closure_env$0<concurrent_sharded_stack::intrusive::impl$2::defer::closure_env$0<intrusive_bench::NodeAdapter,intrusive_bench::recycling::closure$1::closure$0::closure$0::closure_env$0<concurrent_sharded_stack::intrusive::IntrusiveShardedStack<intrusive_bench::NodeAdapter> > >,tuple$<> > >",
+          "cpu_delta": 2595436,
+          "percent": 8.290956201301011
+        },
+        {
+          "symbol": "crossbeam_epoch::internal::Global::collect",
+          "cpu_delta": 2289504,
+          "percent": 7.313675770353601
+        },
+        {
+          "symbol": "intrusive_bench::impl$1::push",
+          "cpu_delta": 2069489,
+          "percent": 6.610851763662917
+        },
+        {
+          "symbol": "intrusive_bench::impl$1::pop_into<intrusive_bench::recycling::closure$1::closure$0::closure$0::closure_env$0<concurrent_sharded_stack::intrusive::IntrusiveShardedStack<intrusive_bench::NodeAdapter> > >",
+          "cpu_delta": 1731996,
+          "percent": 5.53275171371151
+        },
+        {
+          "symbol": "crossbeam_epoch::internal::Global::try_advance",
+          "cpu_delta": 1658508,
+          "percent": 5.297998944110869
+        },
+        {
+          "symbol": "fun_11130",
+          "cpu_delta": 1340769,
+          "percent": 4.283001798180404
+        },
+        {
+          "symbol": "crossbeam_epoch::default::with_handle<crossbeam_epoch::default::pin::closure_env$0,crossbeam_epoch::guard::Guard>",
+          "cpu_delta": 1183857,
+          "percent": 3.781756335199023
+        },
+        {
+          "symbol": "intrusive_bench-e1ff0325534bb5d4.exe!0x1d37c3",
+          "cpu_delta": 958464,
+          "percent": 3.0617526475412116
+        },
+        {
+          "symbol": "fun_6c1840",
+          "cpu_delta": 944836,
+          "percent": 3.018218863193869
+        },
+        {
+          "symbol": "RtlFreeHeap",
+          "cpu_delta": 663689,
+          "percent": 2.120112547674174
+        },
+        {
+          "symbol": "concurrent_sharded_stack::intrusive::collect",
+          "cpu_delta": 625910,
+          "percent": 1.9994299208134263
+        },
+        {
+          "symbol": "fun_26e50",
+          "cpu_delta": 540699,
+          "percent": 1.7272287689186925
+        },
+        {
+          "symbol": "RtlQueryPerformanceCounter",
+          "cpu_delta": 515651,
+          "percent": 1.6472145166195844
+        },
+        {
+          "symbol": "intrusive_bench-e1ff0325534bb5d4.exe!0x1d37ac",
+          "cpu_delta": 399579,
+          "percent": 1.276429851462204
+        },
+        {
+          "symbol": "NtDelayExecution",
+          "cpu_delta": 395629,
+          "percent": 1.263811826207434
+        },
+        {
+          "symbol": "std::sys::pal::windows::time::perf_counter::impl$1::from",
+          "cpu_delta": 385459,
+          "percent": 1.231324404222368
+        },
+        {
+          "symbol": "crossbeam_epoch::internal::Local::defer",
+          "cpu_delta": 214178,
+          "percent": 0.6841780792445847
+        },
+        {
+          "symbol": "RtlDelayExecution",
+          "cpu_delta": 130404,
+          "percent": 0.4165673329931684
+        },
+        {
+          "symbol": "NtWaitForAlertByThreadId",
+          "cpu_delta": 92513,
+          "percent": 0.2955269292138047
+        },
+        {
+          "symbol": "std::time::Instant::now",
+          "cpu_delta": 65685,
+          "percent": 0.20982657945811684
+        },
+        {
+          "symbol": "intrusive_bench-e1ff0325534bb5d4.exe!0x1d37d0",
+          "cpu_delta": 54425,
+          "percent": 0.1738572213900892
+        },
+        {
+          "symbol": "fun_2137a0",
+          "cpu_delta": 54186,
+          "percent": 0.17309375100125626
+        }
+      ],
+      "collector_self": [
+        {
+          "symbol": "crossbeam_epoch::internal::Local::flush",
+          "cpu_delta": 4087037,
+          "percent": 13.055781286880771
+        },
+        {
+          "symbol": "crossbeam_epoch::internal::Global::collect",
+          "cpu_delta": 2289504,
+          "percent": 7.313675770353601
+        },
+        {
+          "symbol": "crossbeam_epoch::internal::Global::try_advance",
+          "cpu_delta": 1658508,
+          "percent": 5.297998944110869
+        }
+      ]
+    }
+  }
+}

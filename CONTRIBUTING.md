@@ -48,9 +48,18 @@ Run on an otherwise idle host, separately from builds/tests:
 ```sh
 cargo bench --bench stack_bench
 cargo bench --bench intrusive_bench
+cargo bench --bench retirement_profile -- intrusive
+cargo bench --bench retirement_profile -- eager
+cargo bench --bench retirement_profile -- value
 ```
 
 Record environment, commands, raw results, payloads, workers/shards and what is
 timed. The intrusive harness counts **completed** cycles/transfers, including
 epoch callbacks. Retiring a node is not completed delivery. Retain slower
 results, and distinguish allocation, synchronization and reclamation costs.
+
+`retirement_profile` counts allocator requests separately from timing. It
+preallocates payloads and keeps an old epoch reader pinned while measuring
+enqueue costs. `eager` reproduces the former per-node flush policy; `intrusive`
+checks that retirement allocations are amortized. Its final delivery phase is
+not a complete collector drain or a peak-memory measurement.

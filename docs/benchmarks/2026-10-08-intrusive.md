@@ -1,10 +1,14 @@
 # Lock-free intrusive benchmarks — 2026-10-08
 
+**Historical 0.3.0 results.** [Follow-up profiling and its fix](2026-10-08-retirement-fix.md)
+identified per-node epoch flushing as the main transfer bottleneck. The results
+below predate that fix and do not describe the current implementation.
+
 This report measures the 0.3.0 epoch-based implementation, including delivery
 of retired nodes. It replaces the unpublished mutex-prototype measurements.
 In these two runs the intrusive variant was slower than the original value
 stack in every matched workload. Avoiding wrapper allocation did not compensate
-for callback bookkeeping and delayed availability in these small-node workloads.
+for the then-unidentified per-node flush overhead and delayed pool availability.
 The API offers embedded storage and a lock-free head algorithm, not a universal
 throughput improvement.
 

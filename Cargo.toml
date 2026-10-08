@@ -1,6 +1,6 @@
 [package]
 name = "concurrent-sharded-stack"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2024"
 rust-version = "1.85"
 description = "Lock-free sharded stacks with epoch reclamation and optional intrusive node storage."
@@ -37,6 +37,11 @@ required-features = ["intrusive"]
 
 [[example]]
 name = "intrusive_recycling"
+required-features = ["intrusive"]
+
+[[bench]]
+name = "retirement_profile"
+harness = false
 required-features = ["intrusive"]
 
 # Profiling-friendly release build: keep full debuginfo so VTune (or any other

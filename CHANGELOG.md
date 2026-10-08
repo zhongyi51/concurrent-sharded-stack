@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.1 — 2026-10-08
+
+- Batch intrusive retirement instead of flushing an epoch bag for every node.
+  This removes per-node bag allocation and reduces global collector contention.
+  Call `intrusive::collect()` on each retiring thread before waiting or becoming
+  idle; this also applies to dropped `Retired` tokens. Thread exit flushes too.
+- Add allocation profiling and regression tests for partial-batch delivery,
+  idle retiring threads, thread exit, and grace-period protection.
+
 ## 0.3.0 — 2026-10-08
 
 - Add `IntrusiveShardedStack` using atomic heads, embedded links and epoch
