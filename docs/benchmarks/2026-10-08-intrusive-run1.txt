@@ -1,0 +1,155 @@
+warn: could not canonicalize path C:\Users\l1z3
+warning: `C:\Users\l1z3\.cargo\config` is deprecated in favor of `config.toml`
+  |
+  = help: if you need to support cargo 1.38 or earlier, you can symlink `config` to `config.toml`
+   Compiling concurrent-sharded-stack v0.3.0 (C:\Users\l1z3\Documents\Codex\2026-10-08\new-chat\outputs\concurrent-sharded-stack)
+    Finished `bench` profile [optimized + debuginfo] target(s) in 2.49s
+     Running benches\intrusive_bench.rs (target\release\deps\intrusive_bench-e1ff0325534bb5d4.exe)
+Gnuplot not found, using plotters backend
+Benchmarking epoch_pool/intrusive/1w
+Benchmarking epoch_pool/intrusive/1w: Warming up for 1.0000 s
+Benchmarking epoch_pool/intrusive/1w: Collecting 20 samples in estimated 1.0618 s (420 iterations)
+Benchmarking epoch_pool/intrusive/1w: Analyzing
+epoch_pool/intrusive/1w time:   [2.3646 ms 2.4078 ms 2.4680 ms]
+                        thrpt:  [4.0518 Melem/s 4.1533 Melem/s 4.2290 Melem/s]
+Found 2 outliers among 20 measurements (10.00%)
+  1 (5.00%) high mild
+  1 (5.00%) high severe
+Benchmarking epoch_pool/value_stack/1w
+Benchmarking epoch_pool/value_stack/1w: Warming up for 1.0000 s
+Benchmarking epoch_pool/value_stack/1w: Collecting 20 samples in estimated 1.2098 s (630 iterations)
+Benchmarking epoch_pool/value_stack/1w: Analyzing
+epoch_pool/value_stack/1w
+                        time:   [2.3076 ms 2.3308 ms 2.3543 ms]
+                        thrpt:  [4.2475 Melem/s 4.2904 Melem/s 4.3335 Melem/s]
+Benchmarking epoch_pool/mutex_vec/1w
+Benchmarking epoch_pool/mutex_vec/1w: Warming up for 1.0000 s
+Benchmarking epoch_pool/mutex_vec/1w: Collecting 20 samples in estimated 1.0834 s (840 iterations)
+Benchmarking epoch_pool/mutex_vec/1w: Analyzing
+epoch_pool/mutex_vec/1w time:   [1.3038 ms 1.3295 ms 1.3722 ms]
+                        thrpt:  [7.2874 Melem/s 7.5217 Melem/s 7.6696 Melem/s]
+Found 2 outliers among 20 measurements (10.00%)
+  1 (5.00%) high mild
+  1 (5.00%) high severe
+Benchmarking epoch_pool/intrusive/4w
+Benchmarking epoch_pool/intrusive/4w: Warming up for 1.0000 s
+Benchmarking epoch_pool/intrusive/4w: Collecting 20 samples in estimated 1.0490 s (60 iterations)
+Benchmarking epoch_pool/intrusive/4w: Analyzing
+epoch_pool/intrusive/4w time:   [14.957 ms 15.460 ms 16.033 ms]
+                        thrpt:  [2.4948 Melem/s 2.5874 Melem/s 2.6744 Melem/s]
+Found 3 outliers among 20 measurements (15.00%)
+  3 (15.00%) high mild
+Benchmarking epoch_pool/value_stack/4w
+Benchmarking epoch_pool/value_stack/4w: Warming up for 1.0000 s
+
+Warning: Unable to complete 20 samples in 1.0s. You may wish to increase target time to 1.3s, enable flat sampling, or reduce sample count to 10.
+Benchmarking epoch_pool/value_stack/4w: Collecting 20 samples in estimated 1.3157 s (210 iterations)
+Benchmarking epoch_pool/value_stack/4w: Analyzing
+epoch_pool/value_stack/4w
+                        time:   [5.7601 ms 5.9007 ms 6.0702 ms]
+                        thrpt:  [6.5895 Melem/s 6.7788 Melem/s 6.9443 Melem/s]
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+Benchmarking epoch_pool/mutex_vec/4w
+Benchmarking epoch_pool/mutex_vec/4w: Warming up for 1.0000 s
+Benchmarking epoch_pool/mutex_vec/4w: Collecting 20 samples in estimated 1.0640 s (100 iterations)
+Benchmarking epoch_pool/mutex_vec/4w: Analyzing
+epoch_pool/mutex_vec/4w time:   [9.6563 ms 9.9686 ms 10.300 ms]
+                        thrpt:  [3.8836 Melem/s 4.0126 Melem/s 4.1424 Melem/s]
+Benchmarking epoch_pool/intrusive/8w
+Benchmarking epoch_pool/intrusive/8w: Warming up for 1.0000 s
+Benchmarking epoch_pool/intrusive/8w: Collecting 20 samples in estimated 1.2437 s (40 iterations)
+Benchmarking epoch_pool/intrusive/8w: Analyzing
+epoch_pool/intrusive/8w time:   [31.273 ms 32.189 ms 33.137 ms]
+                        thrpt:  [2.4142 Melem/s 2.4853 Melem/s 2.5581 Melem/s]
+Benchmarking epoch_pool/value_stack/8w
+Benchmarking epoch_pool/value_stack/8w: Warming up for 1.0000 s
+Benchmarking epoch_pool/value_stack/8w: Collecting 20 samples in estimated 1.0154 s (80 iterations)
+Benchmarking epoch_pool/value_stack/8w: Analyzing
+epoch_pool/value_stack/8w
+                        time:   [12.172 ms 12.594 ms 13.089 ms]
+                        thrpt:  [6.1119 Melem/s 6.3524 Melem/s 6.5723 Melem/s]
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+Benchmarking epoch_pool/mutex_vec/8w
+Benchmarking epoch_pool/mutex_vec/8w: Warming up for 1.0000 s
+Benchmarking epoch_pool/mutex_vec/8w: Collecting 20 samples in estimated 1.3599 s (60 iterations)
+Benchmarking epoch_pool/mutex_vec/8w: Analyzing
+epoch_pool/mutex_vec/8w time:   [21.463 ms 22.506 ms 23.540 ms]
+                        thrpt:  [3.3985 Melem/s 3.5545 Melem/s 3.7273 Melem/s]
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+
+Benchmarking epoch_transfer/intrusive/1p_1c
+Benchmarking epoch_transfer/intrusive/1p_1c: Warming up for 1.0000 s
+
+Warning: Unable to complete 20 samples in 1.0s. You may wish to increase target time to 1.3s, enable flat sampling, or reduce sample count to 10.
+Benchmarking epoch_transfer/intrusive/1p_1c: Collecting 20 samples in estimated 1.3421 s (210 iterations)
+Benchmarking epoch_transfer/intrusive/1p_1c: Analyzing
+epoch_transfer/intrusive/1p_1c
+                        time:   [7.0225 ms 7.3676 ms 7.6986 ms]
+                        thrpt:  [1.2989 Melem/s 1.3573 Melem/s 1.4240 Melem/s]
+Benchmarking epoch_transfer/value_stack/1p_1c
+Benchmarking epoch_transfer/value_stack/1p_1c: Warming up for 1.0000 s
+Benchmarking epoch_transfer/value_stack/1p_1c: Collecting 20 samples in estimated 1.3551 s (420 iterations)
+Benchmarking epoch_transfer/value_stack/1p_1c: Analyzing
+epoch_transfer/value_stack/1p_1c
+                        time:   [2.1811 ms 2.3875 ms 2.6127 ms]
+                        thrpt:  [3.8275 Melem/s 4.1884 Melem/s 4.5848 Melem/s]
+Benchmarking epoch_transfer/mutex_vec/1p_1c
+Benchmarking epoch_transfer/mutex_vec/1p_1c: Warming up for 1.0000 s
+Benchmarking epoch_transfer/mutex_vec/1p_1c: Collecting 20 samples in estimated 1.0112 s (420 iterations)
+Benchmarking epoch_transfer/mutex_vec/1p_1c: Analyzing
+epoch_transfer/mutex_vec/1p_1c
+                        time:   [2.4270 ms 2.5086 ms 2.5595 ms]
+                        thrpt:  [3.9070 Melem/s 3.9863 Melem/s 4.1203 Melem/s]
+Found 2 outliers among 20 measurements (10.00%)
+  2 (10.00%) low mild
+Benchmarking epoch_transfer/intrusive/4p_4c
+Benchmarking epoch_transfer/intrusive/4p_4c: Warming up for 1.0000 s
+Benchmarking epoch_transfer/intrusive/4p_4c: Collecting 20 samples in estimated 1.0694 s (80 iterations)
+Benchmarking epoch_transfer/intrusive/4p_4c: Analyzing
+epoch_transfer/intrusive/4p_4c
+                        time:   [13.494 ms 13.830 ms 14.177 ms]
+                        thrpt:  [2.8216 Melem/s 2.8922 Melem/s 2.9643 Melem/s]
+Benchmarking epoch_transfer/value_stack/4p_4c
+Benchmarking epoch_transfer/value_stack/4p_4c: Warming up for 1.0000 s
+
+Warning: Unable to complete 20 samples in 1.0s. You may wish to increase target time to 1.1s, enable flat sampling, or reduce sample count to 10.
+Benchmarking epoch_transfer/value_stack/4p_4c: Collecting 20 samples in estimated 1.1370 s (210 iterations)
+Benchmarking epoch_transfer/value_stack/4p_4c: Analyzing
+epoch_transfer/value_stack/4p_4c
+                        time:   [5.2712 ms 5.3896 ms 5.4947 ms]
+                        thrpt:  [7.2798 Melem/s 7.4218 Melem/s 7.5884 Melem/s]
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) low mild
+Benchmarking epoch_transfer/mutex_vec/4p_4c
+Benchmarking epoch_transfer/mutex_vec/4p_4c: Warming up for 1.0000 s
+Benchmarking epoch_transfer/mutex_vec/4p_4c: Collecting 20 samples in estimated 1.3266 s (80 iterations)
+Benchmarking epoch_transfer/mutex_vec/4p_4c: Analyzing
+epoch_transfer/mutex_vec/4p_4c
+                        time:   [17.155 ms 17.299 ms 17.440 ms]
+                        thrpt:  [2.2936 Melem/s 2.3122 Melem/s 2.3317 Melem/s]
+Benchmarking epoch_transfer/intrusive/8p_8c
+Benchmarking epoch_transfer/intrusive/8p_8c: Warming up for 1.0000 s
+Benchmarking epoch_transfer/intrusive/8p_8c: Collecting 20 samples in estimated 1.3279 s (60 iterations)
+Benchmarking epoch_transfer/intrusive/8p_8c: Analyzing
+epoch_transfer/intrusive/8p_8c
+                        time:   [21.778 ms 21.929 ms 22.075 ms]
+                        thrpt:  [3.6240 Melem/s 3.6482 Melem/s 3.6734 Melem/s]
+Benchmarking epoch_transfer/value_stack/8p_8c
+Benchmarking epoch_transfer/value_stack/8p_8c: Warming up for 1.0000 s
+
+Warning: Unable to complete 20 samples in 1.0s. You may wish to increase target time to 1.7s, enable flat sampling, or reduce sample count to 10.
+Benchmarking epoch_transfer/value_stack/8p_8c: Collecting 20 samples in estimated 1.6748 s (210 iterations)
+Benchmarking epoch_transfer/value_stack/8p_8c: Analyzing
+epoch_transfer/value_stack/8p_8c
+                        time:   [8.4525 ms 9.0523 ms 9.7365 ms]
+                        thrpt:  [8.2165 Melem/s 8.8375 Melem/s 9.4646 Melem/s]
+Benchmarking epoch_transfer/mutex_vec/8p_8c
+Benchmarking epoch_transfer/mutex_vec/8p_8c: Warming up for 1.0000 s
+Benchmarking epoch_transfer/mutex_vec/8p_8c: Collecting 20 samples in estimated 1.3877 s (40 iterations)
+Benchmarking epoch_transfer/mutex_vec/8p_8c: Analyzing
+epoch_transfer/mutex_vec/8p_8c
+                        time:   [34.271 ms 34.457 ms 34.640 ms]
+                        thrpt:  [2.3095 Melem/s 2.3218 Melem/s 2.3343 Melem/s]

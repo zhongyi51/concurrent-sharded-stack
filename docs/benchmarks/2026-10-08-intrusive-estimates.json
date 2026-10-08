@@ -1,0 +1,362 @@
+[
+  {
+    "workload": "epoch_pool",
+    "workers": "1w",
+    "container": "intrusive",
+    "run": "epoch1",
+    "mean_ns": 2406599.759917059,
+    "lower_95": 2361220.2525088396,
+    "upper_95": 2464074.130927558,
+    "million_completed_per_second": 4.1552401718616645
+  },
+  {
+    "workload": "epoch_pool",
+    "workers": "1w",
+    "container": "intrusive",
+    "run": "epoch2",
+    "mean_ns": 2330807.728214718,
+    "lower_95": 2319689.24025974,
+    "upper_95": 2342502.038365093,
+    "million_completed_per_second": 4.290358178818765
+  },
+  {
+    "workload": "epoch_pool",
+    "workers": "1w",
+    "container": "mutex_vec",
+    "run": "epoch1",
+    "mean_ns": 1331405.3447265723,
+    "lower_95": 1304697.0109648532,
+    "upper_95": 1362998.9098808626,
+    "million_completed_per_second": 7.5108606403061104
+  },
+  {
+    "workload": "epoch_pool",
+    "workers": "1w",
+    "container": "mutex_vec",
+    "run": "epoch2",
+    "mean_ns": 741470.1166142417,
+    "lower_95": 737142.3284889713,
+    "upper_95": 745824.8574664715,
+    "million_completed_per_second": 13.486720200758427
+  },
+  {
+    "workload": "epoch_pool",
+    "workers": "1w",
+    "container": "value_stack",
+    "run": "epoch1",
+    "mean_ns": 2326105.092825131,
+    "lower_95": 2303663.7656004857,
+    "upper_95": 2349797.278657681,
+    "million_completed_per_second": 4.299031901372381
+  },
+  {
+    "workload": "epoch_pool",
+    "workers": "1w",
+    "container": "value_stack",
+    "run": "epoch2",
+    "mean_ns": 1201211.773810023,
+    "lower_95": 1193930.4692996696,
+    "upper_95": 1208820.7885552752,
+    "million_completed_per_second": 8.324926726518704
+  },
+  {
+    "workload": "epoch_pool",
+    "workers": "4w",
+    "container": "intrusive",
+    "run": "epoch1",
+    "mean_ns": 15459545.000000004,
+    "lower_95": 14956634.291666666,
+    "upper_95": 16033263.874999996,
+    "million_completed_per_second": 2.58739827077705
+  },
+  {
+    "workload": "epoch_pool",
+    "workers": "4w",
+    "container": "intrusive",
+    "run": "epoch2",
+    "mean_ns": 12776632.5,
+    "lower_95": 12473692.375,
+    "upper_95": 13065395.15625,
+    "million_completed_per_second": 3.130715389990281
+  },
+  {
+    "workload": "epoch_pool",
+    "workers": "4w",
+    "container": "mutex_vec",
+    "run": "epoch1",
+    "mean_ns": 9968584.0,
+    "lower_95": 9656282.975,
+    "upper_95": 10299787.299999999,
+    "million_completed_per_second": 4.012606003019084
+  },
+  {
+    "workload": "epoch_pool",
+    "workers": "4w",
+    "container": "mutex_vec",
+    "run": "epoch2",
+    "mean_ns": 11597883.0,
+    "lower_95": 11508684.85,
+    "upper_95": 11690862.0,
+    "million_completed_per_second": 3.448905287283895
+  },
+  {
+    "workload": "epoch_pool",
+    "workers": "4w",
+    "container": "value_stack",
+    "run": "epoch1",
+    "mean_ns": 5883128.349444674,
+    "lower_95": 5763305.484818634,
+    "upper_95": 6009567.216275413,
+    "million_completed_per_second": 6.799103746185602
+  },
+  {
+    "workload": "epoch_pool",
+    "workers": "4w",
+    "container": "value_stack",
+    "run": "epoch2",
+    "mean_ns": 4065546.9074780038,
+    "lower_95": 3977329.717284982,
+    "upper_95": 4155670.7261582264,
+    "million_completed_per_second": 9.83877468648206
+  },
+  {
+    "workload": "epoch_pool",
+    "workers": "8w",
+    "container": "intrusive",
+    "run": "epoch1",
+    "mean_ns": 32189327.5,
+    "lower_95": 31273474.8125,
+    "upper_95": 33137428.812499996,
+    "million_completed_per_second": 2.4852957863130256
+  },
+  {
+    "workload": "epoch_pool",
+    "workers": "8w",
+    "container": "intrusive",
+    "run": "epoch2",
+    "mean_ns": 23300566.66666667,
+    "lower_95": 23206066.666666668,
+    "upper_95": 23396320.41666666,
+    "million_completed_per_second": 3.4333928931628264
+  },
+  {
+    "workload": "epoch_pool",
+    "workers": "8w",
+    "container": "mutex_vec",
+    "run": "epoch1",
+    "mean_ns": 22506500.0,
+    "lower_95": 21463101.66666667,
+    "upper_95": 23539908.20833334,
+    "million_completed_per_second": 3.5545286917112833
+  },
+  {
+    "workload": "epoch_pool",
+    "workers": "8w",
+    "container": "mutex_vec",
+    "run": "epoch2",
+    "mean_ns": 25939437.5,
+    "lower_95": 25195772.5,
+    "upper_95": 26745173.875,
+    "million_completed_per_second": 3.084106970322699
+  },
+  {
+    "workload": "epoch_pool",
+    "workers": "8w",
+    "container": "value_stack",
+    "run": "epoch1",
+    "mean_ns": 12593727.5,
+    "lower_95": 12172333.75,
+    "upper_95": 13089296.34375,
+    "million_completed_per_second": 6.352368669244273
+  },
+  {
+    "workload": "epoch_pool",
+    "workers": "8w",
+    "container": "value_stack",
+    "run": "epoch2",
+    "mean_ns": 7776266.381610456,
+    "lower_95": 7551561.540315387,
+    "upper_95": 8002398.011842658,
+    "million_completed_per_second": 10.287713418509732
+  },
+  {
+    "workload": "epoch_transfer",
+    "workers": "1p_1c",
+    "container": "intrusive",
+    "run": "epoch1",
+    "mean_ns": 7044983.67260657,
+    "lower_95": 6675074.288919413,
+    "upper_95": 7422421.862832243,
+    "million_completed_per_second": 1.4194497055945774
+  },
+  {
+    "workload": "epoch_transfer",
+    "workers": "1p_1c",
+    "container": "intrusive",
+    "run": "epoch2",
+    "mean_ns": 3138233.5258652596,
+    "lower_95": 3128492.629959445,
+    "upper_95": 3150029.2709397576,
+    "million_completed_per_second": 3.1865060128827873
+  },
+  {
+    "workload": "epoch_transfer",
+    "workers": "1p_1c",
+    "container": "mutex_vec",
+    "run": "epoch1",
+    "mean_ns": 2380345.4153544037,
+    "lower_95": 2230875.1801335444,
+    "upper_95": 2505368.428181538,
+    "million_completed_per_second": 4.201070960329984
+  },
+  {
+    "workload": "epoch_transfer",
+    "workers": "1p_1c",
+    "container": "mutex_vec",
+    "run": "epoch2",
+    "mean_ns": 2252090.140886712,
+    "lower_95": 2230085.8589985953,
+    "upper_95": 2281171.2542405846,
+    "million_completed_per_second": 4.440319602865769
+  },
+  {
+    "workload": "epoch_transfer",
+    "workers": "1p_1c",
+    "container": "value_stack",
+    "run": "epoch1",
+    "mean_ns": 2380513.240164591,
+    "lower_95": 2165737.460071176,
+    "upper_95": 2582550.1240856014,
+    "million_completed_per_second": 4.200774787250749
+  },
+  {
+    "workload": "epoch_transfer",
+    "workers": "1p_1c",
+    "container": "value_stack",
+    "run": "epoch2",
+    "mean_ns": 2515421.3447732716,
+    "lower_95": 2501210.436026309,
+    "upper_95": 2531042.2455488956,
+    "million_completed_per_second": 3.975477118685798
+  },
+  {
+    "workload": "epoch_transfer",
+    "workers": "4p_4c",
+    "container": "intrusive",
+    "run": "epoch1",
+    "mean_ns": 13830216.25,
+    "lower_95": 13493726.28125,
+    "upper_95": 14176539.875,
+    "million_completed_per_second": 2.8922179723690147
+  },
+  {
+    "workload": "epoch_transfer",
+    "workers": "4p_4c",
+    "container": "intrusive",
+    "run": "epoch2",
+    "mean_ns": 13680678.75,
+    "lower_95": 13521418.75,
+    "upper_95": 13842883.21875,
+    "million_completed_per_second": 2.923831538694672
+  },
+  {
+    "workload": "epoch_transfer",
+    "workers": "4p_4c",
+    "container": "mutex_vec",
+    "run": "epoch1",
+    "mean_ns": 17299246.25,
+    "lower_95": 17155137.96875,
+    "upper_95": 17439870.46875,
+    "million_completed_per_second": 2.3122394711272465
+  },
+  {
+    "workload": "epoch_transfer",
+    "workers": "4p_4c",
+    "container": "mutex_vec",
+    "run": "epoch2",
+    "mean_ns": 15773423.75,
+    "lower_95": 15646219.40625,
+    "upper_95": 15895212.5625,
+    "million_completed_per_second": 2.5359110763761734
+  },
+  {
+    "workload": "epoch_transfer",
+    "workers": "4p_4c",
+    "container": "value_stack",
+    "run": "epoch1",
+    "mean_ns": 5344589.830373273,
+    "lower_95": 5169259.253860422,
+    "upper_95": 5507295.897406051,
+    "million_completed_per_second": 7.484203890199437
+  },
+  {
+    "workload": "epoch_transfer",
+    "workers": "4p_4c",
+    "container": "value_stack",
+    "run": "epoch2",
+    "mean_ns": 5277461.221052683,
+    "lower_95": 5165870.211060286,
+    "upper_95": 5386842.9932871675,
+    "million_completed_per_second": 7.579401974652747
+  },
+  {
+    "workload": "epoch_transfer",
+    "workers": "8p_8c",
+    "container": "intrusive",
+    "run": "epoch1",
+    "mean_ns": 21928515.0,
+    "lower_95": 21777931.166666664,
+    "upper_95": 22074975.04166667,
+    "million_completed_per_second": 3.6482178569775474
+  },
+  {
+    "workload": "epoch_transfer",
+    "workers": "8p_8c",
+    "container": "intrusive",
+    "run": "epoch2",
+    "mean_ns": 22221526.666666664,
+    "lower_95": 22115724.999999993,
+    "upper_95": 22327550.125000004,
+    "million_completed_per_second": 3.6001126835269948
+  },
+  {
+    "workload": "epoch_transfer",
+    "workers": "8p_8c",
+    "container": "mutex_vec",
+    "run": "epoch1",
+    "mean_ns": 34456665.0,
+    "lower_95": 34271062.375,
+    "upper_95": 34640125.0,
+    "million_completed_per_second": 2.3217569082788483
+  },
+  {
+    "workload": "epoch_transfer",
+    "workers": "8p_8c",
+    "container": "mutex_vec",
+    "run": "epoch2",
+    "mean_ns": 31751642.5,
+    "lower_95": 31542785.0,
+    "upper_95": 31944045.8125,
+    "million_completed_per_second": 2.5195546970522864
+  },
+  {
+    "workload": "epoch_transfer",
+    "workers": "8p_8c",
+    "container": "value_stack",
+    "run": "epoch1",
+    "mean_ns": 8870381.263443321,
+    "lower_95": 8431059.134402722,
+    "upper_95": 9345911.937326647,
+    "million_completed_per_second": 9.018778068728182
+  },
+  {
+    "workload": "epoch_transfer",
+    "workers": "8p_8c",
+    "container": "value_stack",
+    "run": "epoch2",
+    "mean_ns": 8062977.9074119255,
+    "lower_95": 7932409.035423673,
+    "upper_95": 8190408.305228842,
+    "million_completed_per_second": 9.921892496624562
+  }
+]

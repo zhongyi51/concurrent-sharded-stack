@@ -1,40 +1,56 @@
 # Contributing
 
-Small, focused changes and reports from real workloads are welcome. For a bug,
-include a minimal reproducer, crate and Rust versions, OS/architecture, and the
-result you expected. For concurrent behavior, include how producers finish and
-when the container is closed; `Empty` alone is not a completion signal.
+Include a reproducer, Rust/crate versions, OS/CPU, shard and worker counts, and
+how producers finish. `Empty` alone is not a completion signal. For intrusive
+nodes, distinguish removal from eventual callback delivery.
 
-For a performance report, include the harness, release build command, CPU,
-available CPUs or VM quota, payload size, worker/shard counts, and raw results.
-Mention whether allocation, setup, thread startup, and cleanup are timed. Keep
-results where this crate is slower, and identify contract differences between
-containers.
-
-## Local checks
+## Checks
 
 ```sh
 cargo fmt --all -- --check
 cargo test --all-targets
 cargo test --doc
-cargo clippy --all-targets -- -D warnings
+cargo test --all-targets --no-default-features
+cargo test --doc --no-default-features
+cargo clippy --all-targets --all-features -- -D warnings
+cargo clippy --all-targets --no-default-features -- -D warnings
 cargo +1.85.0 check --lib
+cargo +1.85.0 check --lib --no-default-features
 cargo run --example buffer_recycling
+cargo run --example intrusive_recycling
 ```
 
-The supported minimum Rust version is 1.85. Benchmark and other development
-dependencies are checked on stable; the library itself is checked on the
-minimum version. Keep dependency and public API changes relevant to the fix.
+Tests are grouped as follows:
 
-Changes to unsafe code or concurrent behavior should explain the invariant
-being preserved and include a focused regression test. Use the nightly Miri
-command and flags from [CI](.github/workflows/ci.yml) when changing those paths;
-leak checking is disabled there because epoch reclamation is deferred. Avoid
-timing-based tests when a controlled thread interleaving can demonstrate the
-behavior.
+- `src/tests/value.rs`: original value-stack behavior, deterministic scan/close
+  interleavings, concurrent transfer, drop and panic cleanup.
+- `tests/intrusive.rs`: retired-node ownership, cross-thread delivery, delayed
+  link release, duplicate rejection, reuse, unique IDs, close and drop races.
+- `tests/intrusive_custom.rs`: a user-defined link and trait implementation.
+- Rustdoc: working API examples and compile-fail tests for missing contracts.
 
-Run benchmarks separately from builds or tests, on an otherwise idle machine:
+Unsafe changes need an invariant explanation and targeted interleaving tests.
+Use the flags in CI for Miri:
+
+```sh
+MIRIFLAGS="-Zmiri-tree-borrows -Zmiri-permissive-provenance -Zmiri-disable-isolation -Zmiri-ignore-leaks" cargo +nightly miri test --lib --test intrusive --test intrusive_custom
+```
+
+The global epoch collector can retain internal allocations at process exit, so
+Miri's process-exit leak check is disabled. Tests explicitly verify node drop
+counts and callback completion instead. Miri and stress tests are useful checks,
+not a proof of correctness.
+
+## Benchmarks
+
+Run on an otherwise idle host, separately from builds/tests:
 
 ```sh
 cargo bench --bench stack_bench
+cargo bench --bench intrusive_bench
 ```
+
+Record environment, commands, raw results, payloads, workers/shards and what is
+timed. The intrusive harness counts **completed** cycles/transfers, including
+epoch callbacks. Retiring a node is not completed delivery. Retain slower
+results, and distinguish allocation, synchronization and reclamation costs.
