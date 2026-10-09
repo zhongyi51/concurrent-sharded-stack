@@ -1,68 +1,53 @@
-//! A deliberately blocking reference hazard domain, independent of Crossbeam.
-//! The mutex serializes publication with reclamation decisions. This tests the
-//! address-based contract, not a production lock-free hazard implementation.
-use concurrent_sharded_stack::Reclaimer;
+//! Blocking reference hazard domain, independent of Crossbeam. The mutex
+//! serializes hazard publication with collection; this is not a lock-free backend.
+use concurrent_sharded_stack::Guard;
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicPtr, Ordering},
 };
-
+use std::{marker::PhantomData, rc::Rc};
 type Action = Box<dyn FnOnce() + Send>;
 #[derive(Default)]
 struct State {
     hazards: Vec<usize>,
     free: Vec<usize>,
     pending: Vec<(usize, Action)>,
+    panic_protect: bool,
+    retires: usize,
+    unpins: usize,
 }
 #[derive(Clone, Default)]
 pub struct Hazards(Arc<Mutex<State>>);
-pub struct Guard {
+// Deliberately !Send + !Sync: only the factory/domain crosses threads.
+pub struct HazardGuard {
     domain: Hazards,
-    slot: usize,
+    slot: Option<usize>,
+    local: PhantomData<Rc<()>>,
 }
-impl Drop for Guard {
-    fn drop(&mut self) {
-        let mut state = self.domain.0.lock().unwrap();
-        state.hazards[self.slot] = 0;
-        state.free.push(self.slot);
-    }
-}
-// SAFETY: clones share one domain. Publication and retirement scanning hold the
-// same mutex, preventing reclamation between the load and hazard publication.
-// Only unprotected addresses are selected; callbacks execute outside the lock.
-unsafe impl Reclaimer for Hazards {
-    type Guard<'a> = Guard;
-    fn pin(&self) -> Guard {
-        let mut state = self.0.lock().unwrap();
-        let slot = state.free.pop().unwrap_or_else(|| {
-            state.hazards.push(0);
-            state.hazards.len() - 1
-        });
-        Guard {
+impl Hazards {
+    pub fn guard(&self) -> HazardGuard {
+        HazardGuard {
             domain: self.clone(),
-            slot,
+            slot: None,
+            local: PhantomData,
         }
     }
-    unsafe fn protect<T>(&self, source: &AtomicPtr<T>, guard: &mut Guard) -> *mut T {
-        assert!(Arc::ptr_eq(&self.0, &guard.domain.0));
-        let mut state = self.0.lock().unwrap();
-        loop {
-            let raw = source.load(Ordering::Acquire);
-            state.hazards[guard.slot] = raw.addr() & !1;
-            if source.load(Ordering::Acquire) == raw {
-                return raw;
-            }
-        }
+    pub fn factory(&self) -> impl Fn() -> HazardGuard + Send + Sync + 'static {
+        let domain = self.clone();
+        move || domain.guard()
     }
-    unsafe fn retire(&self, address: *mut (), action: impl FnOnce() + Send + 'static) {
-        self.0
-            .lock()
-            .unwrap()
-            .pending
-            .push((address.addr(), Box::new(action)));
-        self.collect(); // Also exercise backends that reclaim synchronously.
+    pub fn panic_next_protect(&self) {
+        self.0.lock().unwrap().panic_protect = true;
     }
-    fn collect(&self) {
+    pub fn counts(&self) -> (usize, usize, usize) {
+        let state = self.0.lock().unwrap();
+        (
+            state.hazards.iter().filter(|&&p| p != 0).count(),
+            state.retires,
+            state.unpins,
+        )
+    }
+    pub fn collect(&self) {
         let ready = {
             let mut state = self.0.lock().unwrap();
             let mut ready = Vec::new();
@@ -79,5 +64,46 @@ unsafe impl Reclaimer for Hazards {
         for action in ready {
             action();
         }
+    }
+}
+// No Drop cleanup: tests must observe the stack calling Guard::unpin itself.
+// SAFETY: publication and retirement scanning hold the same mutex, preventing
+// reclamation between load and hazard publication. Callbacks run outside it.
+unsafe impl Guard for HazardGuard {
+    unsafe fn protect<T>(&mut self, source: &AtomicPtr<T>) -> *mut T {
+        let mut state = self.domain.0.lock().unwrap();
+        let slot = *self.slot.get_or_insert_with(|| {
+            state.free.pop().unwrap_or_else(|| {
+                state.hazards.push(0);
+                state.hazards.len() - 1
+            })
+        });
+        let raw = loop {
+            let raw = source.load(Ordering::Acquire);
+            state.hazards[slot] = raw.addr() & !1;
+            if source.load(Ordering::Acquire) == raw {
+                break raw;
+            }
+        };
+        let panic = std::mem::take(&mut state.panic_protect);
+        drop(state);
+        assert!(!panic, "injected protection panic");
+        raw
+    }
+    fn unpin(&mut self) {
+        if let Some(slot) = self.slot.take() {
+            let mut state = self.domain.0.lock().unwrap();
+            state.hazards[slot] = 0;
+            state.free.push(slot);
+            state.unpins += 1;
+        }
+    }
+    unsafe fn retire(&mut self, address: *mut (), action: impl FnOnce() + Send + 'static) {
+        {
+            let mut state = self.domain.0.lock().unwrap();
+            state.retires += 1;
+            state.pending.push((address.addr(), Box::new(action)));
+        }
+        self.domain.collect(); // Exercise synchronous eligible callbacks too.
     }
 }

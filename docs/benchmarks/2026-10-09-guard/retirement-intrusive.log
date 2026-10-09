@@ -1,0 +1,6 @@
+    Finished `bench` profile [optimized + debuginfo] target(s) in 0.03s
+     Running benches/retirement_profile.rs (target/release/deps/retirement_profile-ea71c9d3409ccf52)
+mode=intrusive; nodes=65536; payload bytes=16
+push: Counts { allocations: 0, bytes: 0, large_allocations: 0 }; bytes/node=0.00
+pop + defer: Counts { allocations: 1023, bytes: 2119656, large_allocations: 1023 }; bytes/node=32.34
+flush + delivery: Counts { allocations: 127, bytes: 263144, large_allocations: 127 }; bytes/node=4.02

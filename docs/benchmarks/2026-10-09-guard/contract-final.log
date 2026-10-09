@@ -1,0 +1,16 @@
+   Compiling concurrent-sharded-stack v0.4.0 (/workspace/scratch/6b153def8d8f/concurrent-sharded-stack)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.34s
+     Running tests/guard.rs (target/debug/deps/guard-64cf5ee83e0ed87a)
+
+running 8 tests
+test guard_can_replace_protection_and_reenter_after_idempotent_unpin ... ok
+test hazard_identity_is_untagged_link_not_container_and_other_nodes_progress ... ok
+test custom_backend_value_stack_preserves_borrowed_and_non_send_payloads ... ok
+test scope_unpins_on_empty_closed_and_protection_panic ... ok
+test retire_token_keeps_custom_domain_alive_and_callbacks_can_reinsert ... ok
+test panicking_callback_releases_link_and_ownership_once ... ok
+test send_but_not_sync_values_can_cross_threads ... ok
+test reference_hazard_backend_concurrent_transfer_and_reuse ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+

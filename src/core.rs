@@ -1,5 +1,6 @@
 //! Shared intrusive head algorithm. No payload, allocation, or epoch operations.
-use crate::{PopError, Reclaimer, current_thread_id};
+use crate::reclaim::{Factory, Scoped};
+use crate::{Guard, PopError, current_thread_id};
 use crossbeam_utils::CachePadded;
 use intrusive_collections::singly_linked_list::SinglyLinkedListOps;
 use std::ptr::{self, NonNull};
@@ -12,13 +13,13 @@ fn closed<L>(p: *mut L) -> bool {
     p.addr() & 1 != 0
 }
 
-pub(crate) struct Core<L, R: Reclaimer> {
+pub(crate) struct Core<L, G: Guard> {
     shards: Box<[CachePadded<AtomicPtr<L>>]>,
-    pub(crate) reclaimer: R,
+    pub(crate) guards: Factory<G>,
 }
 
-impl<L, R: Reclaimer> Core<L, R> {
-    pub(crate) fn new(count: usize, reclaimer: R) -> Self {
+impl<L, G: Guard> Core<L, G> {
+    pub(crate) fn new(count: usize, make_guard: impl Fn() -> G + Send + Sync + 'static) -> Self {
         assert!(
             count.is_power_of_two(),
             "shard_count must be a nonzero power of two"
@@ -31,7 +32,7 @@ impl<L, R: Reclaimer> Core<L, R> {
             shards: (0..count)
                 .map(|_| CachePadded::new(AtomicPtr::new(ptr::null_mut())))
                 .collect(),
-            reclaimer,
+            guards: std::sync::Arc::new(Box::new(make_guard)),
         }
     }
     pub(crate) fn count(&self) -> usize {
@@ -51,10 +52,10 @@ impl<L, R: Reclaimer> Core<L, R> {
         ops: &mut O,
     ) -> bool {
         let shard = &self.shards[self.local()];
-        let mut guard = self.reclaimer.pin();
+        let mut guard = Scoped::new(&self.guards);
         loop {
             // Protection also preserves provenance when copying head into next.
-            let head = unsafe { self.reclaimer.protect(shard, &mut guard) };
+            let head = unsafe { guard.0.protect(shard) };
             if closed(head) {
                 return false;
             }
@@ -76,13 +77,13 @@ impl<L, R: Reclaimer> Core<L, R> {
         &self,
         ops: &O,
     ) -> Result<NonNull<L>, PopError> {
-        let mut guard = self.reclaimer.pin();
+        let mut guard = Scoped::new(&self.guards);
         let mut all_closed = true;
         let start = self.local();
         for mask in 0..self.count() {
             let shard = &self.shards[start ^ mask];
             loop {
-                let head = unsafe { self.reclaimer.protect(shard, &mut guard) };
+                let head = unsafe { guard.0.protect(shard) };
                 let Some(link) = NonNull::new(untag(head)) else {
                     all_closed &= closed(head);
                     break;
@@ -109,10 +110,10 @@ impl<L, R: Reclaimer> Core<L, R> {
 
     pub(crate) fn close(&self) -> bool {
         let mut changed = false;
-        let mut guard = self.reclaimer.pin();
+        let mut guard = Scoped::new(&self.guards);
         for shard in &self.shards {
             loop {
-                let head = unsafe { self.reclaimer.protect(shard, &mut guard) };
+                let head = unsafe { guard.0.protect(shard) };
                 if closed(head) {
                     break;
                 }

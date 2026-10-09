@@ -1,0 +1,4 @@
+    Finished `bench` profile [optimized + debuginfo] target(s) in 0.05s
+     Running benches/cache_profile.rs (target/release/deps/cache_profile-0ad8d217d0e3aff2)
+cache_capacity=0; pushes=4096; node_allocations=4096; node_bytes=8200
+cache_capacity=64; pushes=4096; node_allocations=32; node_bytes=8200

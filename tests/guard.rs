@@ -1,7 +1,5 @@
 mod support;
-use concurrent_sharded_stack::{
-    ConcurrentShardedStack, IntrusiveShardedStack, PopError, Reclaimer,
-};
+use concurrent_sharded_stack::{ConcurrentShardedStack, Guard, IntrusiveShardedStack, PopError};
 use intrusive_collections::{SinglyLinkedListAtomicLink, intrusive_adapter};
 use std::sync::{
     Arc,
@@ -27,7 +25,7 @@ fn node(id: usize) -> Arc<Node> {
 #[test]
 fn hazard_identity_is_untagged_link_not_container_and_other_nodes_progress() {
     let domain = Hazards::default();
-    let stack = unsafe { IntrusiveShardedStack::with_reclaimer(1, A::new(), domain.clone()) };
+    let stack = unsafe { IntrusiveShardedStack::with_guard_factory(1, A::new(), domain.factory()) };
     let a = node(1);
     let b = node(2);
     let link = &a.link as *const _ as *mut SinglyLinkedListAtomicLink;
@@ -37,11 +35,8 @@ fn hazard_identity_is_untagged_link_not_container_and_other_nodes_progress() {
     // Model a reader of a tagged head, then unlink the shadow source so no
     // new reader can acquire this ownership cycle from it.
     let source = AtomicPtr::new(link.map_addr(|a| a | 1));
-    let mut guard = domain.pin();
-    assert_eq!(
-        unsafe { domain.protect(&source, &mut guard) },
-        link.map_addr(|a| a | 1)
-    );
+    let mut guard = domain.guard();
+    assert_eq!(unsafe { guard.protect(&source) }, link.map_addr(|a| a | 1));
     source.store(std::ptr::null_mut(), Ordering::Release);
     stack.close();
     let count = Arc::new(AtomicUsize::new(0));
@@ -56,7 +51,7 @@ fn hazard_identity_is_untagged_link_not_container_and_other_nodes_progress() {
     assert!(a.link.is_linked());
     assert!(matches!(stack.pop(), Err(PopError::Closed)));
     drop(stack);
-    drop(guard);
+    guard.unpin();
     domain.collect();
     assert_eq!(count.load(Ordering::Relaxed), 3);
     assert!(!a.link.is_linked());
@@ -66,13 +61,13 @@ fn hazard_identity_is_untagged_link_not_container_and_other_nodes_progress() {
 fn custom_backend_value_stack_preserves_borrowed_and_non_send_payloads() {
     let domain = Hazards::default();
     let text = String::from("borrowed");
-    let stack = ConcurrentShardedStack::with_reclaimer(1, domain.clone());
+    let stack = unsafe { ConcurrentShardedStack::with_guard_factory(1, 64, domain.factory()) };
     stack.push(text.as_str()).unwrap();
     assert_eq!(stack.pop(), Ok("borrowed"));
     drop(stack);
     drop(text); // callbacks must never access the already removed borrowed T.
     domain.collect();
-    let stack = ConcurrentShardedStack::with_reclaimer(1, domain.clone());
+    let stack = unsafe { ConcurrentShardedStack::with_guard_factory(1, 64, domain.factory()) };
     let rc = std::rc::Rc::new(7);
     stack.push(rc.clone()).unwrap();
     assert_eq!(stack.pop(), Ok(rc.clone()));
@@ -84,7 +79,7 @@ fn custom_backend_value_stack_preserves_borrowed_and_non_send_payloads() {
 #[test]
 fn reference_hazard_backend_concurrent_transfer_and_reuse() {
     let domain = Hazards::default();
-    let stack = ConcurrentShardedStack::with_cache_capacity(4, 8, domain.clone());
+    let stack = unsafe { ConcurrentShardedStack::with_guard_factory(4, 8, domain.factory()) };
     let n = if cfg!(miri) { 16 } else { 2_000 };
     let seen: Vec<_> = (0..4 * n).map(|_| AtomicUsize::new(0)).collect();
     std::thread::scope(|scope| {
@@ -101,7 +96,6 @@ fn reference_hazard_backend_concurrent_transfer_and_reuse() {
                         }
                         std::thread::yield_now();
                     }
-                    stack.collect();
                 }
             });
         }
@@ -115,8 +109,9 @@ fn reference_hazard_backend_concurrent_transfer_and_reuse() {
 #[test]
 fn retire_token_keeps_custom_domain_alive_and_callbacks_can_reinsert() {
     let domain = Hazards::default();
-    let stack =
-        Arc::new(unsafe { IntrusiveShardedStack::with_reclaimer(1, A::new(), domain.clone()) });
+    let stack = Arc::new(unsafe {
+        IntrusiveShardedStack::with_guard_factory(1, A::new(), domain.factory())
+    });
     stack.push(node(7)).ok().unwrap();
     let retired = stack.pop().unwrap();
     let target = stack.clone();
@@ -126,6 +121,7 @@ fn retire_token_keeps_custom_domain_alive_and_callbacks_can_reinsert() {
     domain.collect(); // callback runs outside domain lock, can pin and publish.
     let retired = stack.pop().unwrap();
     drop(stack);
+    drop(domain); // Only the retired token's factory now retains this domain.
     let id = Arc::new(AtomicUsize::new(0));
     let result = id.clone();
     std::thread::spawn(move || {
@@ -135,25 +131,24 @@ fn retire_token_keeps_custom_domain_alive_and_callbacks_can_reinsert() {
     })
     .join()
     .unwrap();
-    domain.collect();
     assert_eq!(id.load(Ordering::Relaxed), 7);
 }
 
 #[test]
 fn send_but_not_sync_values_can_cross_threads() {
-    let stack = ConcurrentShardedStack::with_reclaimer(1, Hazards::default());
+    let stack =
+        unsafe { ConcurrentShardedStack::with_guard_factory(1, 64, Hazards::default().factory()) };
     std::thread::scope(|scope| {
         let stack = &stack;
         scope.spawn(move || stack.push(std::cell::Cell::new(42)).unwrap());
     });
     assert_eq!(stack.pop().unwrap().get(), 42);
-    stack.collect();
 }
 
 #[test]
 fn panicking_callback_releases_link_and_ownership_once() {
     let domain = Hazards::default();
-    let stack = unsafe { IntrusiveShardedStack::with_reclaimer(1, A::new(), domain.clone()) };
+    let stack = unsafe { IntrusiveShardedStack::with_guard_factory(1, A::new(), domain.factory()) };
     let a = node(7);
     stack.push(a.clone()).ok().unwrap();
     let retired = stack.pop().unwrap();
@@ -168,4 +163,62 @@ fn panicking_callback_releases_link_and_ownership_once() {
     stack.push(a).ok().unwrap();
     drop(stack.pop().unwrap());
     domain.collect();
+}
+
+#[test]
+fn scope_unpins_on_empty_closed_and_protection_panic() {
+    let domain = Hazards::default();
+    let stack = unsafe { IntrusiveShardedStack::with_guard_factory(1, A::new(), domain.factory()) };
+    assert!(matches!(stack.pop(), Err(PopError::Empty)));
+    assert_eq!(domain.counts(), (0, 0, 1));
+    let a = node(1);
+    stack.push(a.clone()).ok().unwrap();
+    let (_, _, before) = domain.counts();
+    domain.panic_next_protect();
+    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| stack.pop())).is_err());
+    assert_eq!(domain.counts(), (0, 0, before + 1));
+    assert!(a.link.is_linked());
+    drop(stack.pop().unwrap());
+    assert_eq!(domain.counts().1, 1);
+    stack.close();
+    let (_, _, before) = domain.counts();
+    assert!(matches!(stack.pop(), Err(PopError::Closed)));
+    assert_eq!(domain.counts(), (0, 1, before + 1));
+    assert!(!a.link.is_linked());
+}
+
+#[test]
+fn guard_can_replace_protection_and_reenter_after_idempotent_unpin() {
+    let domain = Hazards::default();
+    let mut a = 1_u64;
+    let mut b = 2_u64;
+    let first = AtomicPtr::new(&mut a);
+    let second = AtomicPtr::new(&mut b);
+    let mut guard = domain.guard();
+    let done = Arc::new(AtomicUsize::new(0));
+    unsafe {
+        guard.protect(&first);
+    }
+    first.store(std::ptr::null_mut(), Ordering::Release);
+    let result = done.clone();
+    unsafe {
+        domain.guard().retire((&raw mut a).cast(), move || {
+            result.fetch_add(1, Ordering::Relaxed);
+        });
+    }
+    assert_eq!(done.load(Ordering::Relaxed), 0);
+    unsafe {
+        guard.protect(&second);
+    }
+    domain.collect();
+    assert_eq!(done.load(Ordering::Relaxed), 1);
+    guard.unpin();
+    guard.unpin();
+    assert_eq!(domain.counts().0, 0);
+    unsafe {
+        guard.protect(&second);
+    }
+    assert_eq!(domain.counts().0, 1);
+    guard.unpin();
+    assert_eq!(domain.counts().0, 0);
 }

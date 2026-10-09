@@ -97,4 +97,8 @@ jobs:
       - name: Run Miri
         run: cargo miri test --lib
       - name: Intrusive ownership and custom trait tests
-        run: cargo miri test --test intrusive --test intrusive_custom --test reclaimer
+        run: cargo miri test --test intrusive --test intrusive_custom --test guard
+      - name: Guard contract with strict provenance and leak checking
+        env:
+          MIRIFLAGS: -Zmiri-tree-borrows -Zmiri-strict-provenance
+        run: cargo miri test --test guard

@@ -1,5 +1,6 @@
 //! Intrusive ownership using upstream adapters and a selectable reclaimer.
-use crate::{Epoch, PopError, PushError, Reclaimer, core::Core, default_shards};
+use crate::reclaim::{Factory, Scoped};
+use crate::{EpochGuard, Guard, PopError, PushError, core::Core, default_shards};
 use intrusive_collections::singly_linked_list::SinglyLinkedListOps;
 use intrusive_collections::{Adapter, LinkOps, PointerOps, SinglyLinkedListAtomicLink};
 use std::ptr::NonNull;
@@ -9,45 +10,45 @@ type Pointer<A> = <<A as Adapter>::PointerOps as PointerOps>::Pointer;
 /// A removed node, still claimed until its reclaimer permits reuse.
 /// No whole-node access is available before then. Drop schedules destruction;
 /// forgetting the token leaks its ownership. The token can outlive its stack.
-pub struct Retired<A, R = Epoch, L = SinglyLinkedListAtomicLink>
+pub struct Retired<A, G = EpochGuard, L = SinglyLinkedListAtomicLink>
 where
     A: Adapter + Clone + Send + Sync + 'static,
     A::LinkOps: SinglyLinkedListOps<LinkPtr = NonNull<L>> + Clone,
     Pointer<A>: Send + 'static,
-    R: Reclaimer,
+    G: Guard,
     L: Send + Sync + 'static,
 {
     link: Option<NonNull<L>>,
     adapter: A,
-    reclaimer: R,
+    guards: Factory<G>,
 }
 // SAFETY: the token owns the erased Send pointer; access is deferred. The unsafe
 // stack constructor establishes the adapter's cross-thread conversion contract.
-unsafe impl<A, R, L> Send for Retired<A, R, L>
+unsafe impl<A, G, L> Send for Retired<A, G, L>
 where
     A: Adapter + Clone + Send + Sync + 'static,
     A::LinkOps: SinglyLinkedListOps<LinkPtr = NonNull<L>> + Clone,
     Pointer<A>: Send + 'static,
-    R: Reclaimer,
+    G: Guard,
     L: Send + Sync + 'static,
 {
 }
-impl<A, R, L> Retired<A, R, L>
+impl<A, G, L> Retired<A, G, L>
 where
     A: Adapter + Clone + Send + Sync + 'static,
     A::LinkOps: SinglyLinkedListOps<LinkPtr = NonNull<L>> + Clone,
     Pointer<A>: Send + 'static,
-    R: Reclaimer,
+    G: Guard,
     L: Send + Sync + 'static,
 {
     /// Deliver the original pointer only after safe reclamation. Callback may
-    /// run on another thread; there is no delivery deadline. With Epoch, call
+    /// run on another thread; there is no delivery deadline. With EpochGuard, call
     /// collect on the retiring thread before waiting or going idle.
     pub fn defer(self, callback: impl FnOnce(Pointer<A>) + Send + 'static) {
-        let reclaimer = self.reclaimer.clone();
+        let mut guard = Scoped::new(&self.guards);
         let address = self.link.unwrap().as_ptr().cast();
         unsafe {
-            reclaimer.retire(address, move || callback(self.reclaim()));
+            guard.0.retire(address, move || callback(self.reclaim()));
         }
     }
     unsafe fn reclaim(mut self) -> Pointer<A> {
@@ -59,12 +60,12 @@ where
         }
     }
 }
-impl<A, R, L> Drop for Retired<A, R, L>
+impl<A, G, L> Drop for Retired<A, G, L>
 where
     A: Adapter + Clone + Send + Sync + 'static,
     A::LinkOps: SinglyLinkedListOps<LinkPtr = NonNull<L>> + Clone,
     Pointer<A>: Send + 'static,
-    R: Reclaimer,
+    G: Guard,
     L: Send + Sync + 'static,
 {
     fn drop(&mut self) {
@@ -72,19 +73,19 @@ where
             Self {
                 link: Some(link),
                 adapter: self.adapter.clone(),
-                reclaimer: self.reclaimer.clone(),
+                guards: self.guards.clone(),
             }
             .defer(drop);
         }
     }
 }
 
-/// Help the default Epoch backend. For custom backends, use stack.collect().
+/// Help the default EpochGuard backend. Custom backends expose their own collection controls.
 pub fn collect() {
-    Epoch.collect();
+    EpochGuard::collect();
 }
 
-/// Sharded intrusive Treiber stack. The only custom trait is [`Reclaimer`].
+/// Sharded intrusive Treiber stack. The only custom trait is [`Guard`].
 ///
 /// Nodes use upstream `Adapter`, `LinkOps`, and `SinglyLinkedListOps`. Because
 /// those traits do not promise concurrent access, construction is unsafe; all
@@ -111,18 +112,18 @@ pub fn collect() {
 /// intrusive_adapter!(A = Box<Node>: Node { link => SinglyLinkedListAtomicLink });
 /// let stack = IntrusiveShardedStack::new(A::new());
 /// ```
-pub struct IntrusiveShardedStack<A, R = Epoch, L = SinglyLinkedListAtomicLink>
+pub struct IntrusiveShardedStack<A, G = EpochGuard, L = SinglyLinkedListAtomicLink>
 where
     A: Adapter + Clone + Send + Sync + 'static,
     A::LinkOps: SinglyLinkedListOps<LinkPtr = NonNull<L>> + Clone,
     Pointer<A>: Send + 'static,
-    R: Reclaimer,
+    G: Guard,
     L: Send + Sync + 'static,
 {
-    core: Core<L, R>,
+    core: Core<L, G>,
     adapter: A,
 }
-impl<A, L> IntrusiveShardedStack<A, Epoch, L>
+impl<A, L> IntrusiveShardedStack<A, EpochGuard, L>
 where
     A: Adapter + Clone + Send + Sync + 'static,
     A::LinkOps: SinglyLinkedListOps<LinkPtr = NonNull<L>> + Clone,
@@ -131,28 +132,35 @@ where
 {
     /// Construct with the default epoch backend and hardware concurrency hint.
     /// # Safety
-    /// See [`Self::with_reclaimer`].
+    /// See [`Self::with_guard_factory`].
     pub unsafe fn new(adapter: A) -> Self {
         unsafe { Self::with_concurrency(default_shards(), adapter) }
     }
     /// Construct with the default epoch backend and a power-of-two shard count.
     /// # Safety
-    /// See [`Self::with_reclaimer`].
+    /// See [`Self::with_guard_factory`].
     pub unsafe fn with_concurrency(count: usize, adapter: A) -> Self {
-        unsafe { Self::with_reclaimer(count, adapter, Epoch) }
+        unsafe { Self::with_guard_factory(count, adapter, EpochGuard::default) }
+    }
+    /// Flush this thread's default epoch backend; does not wait for callbacks.
+    pub fn collect(&self) {
+        EpochGuard::collect();
     }
 }
-impl<A, R, L> IntrusiveShardedStack<A, R, L>
+impl<A, G, L> IntrusiveShardedStack<A, G, L>
 where
     A: Adapter + Clone + Send + Sync + 'static,
     A::LinkOps: SinglyLinkedListOps<LinkPtr = NonNull<L>> + Clone,
     Pointer<A>: Send + 'static,
-    R: Reclaimer,
+    G: Guard,
     L: Send + Sync + 'static,
 {
-    /// Select a reclaimer. Count must be a nonzero power of two; L alignment >= 2.
+    /// Select a guard factory. Count must be a nonzero power of two; L alignment >= 2.
     ///
     /// # Safety
+    /// - The factory must not panic. Every guard it creates must use the same
+    ///   reclamation domain; the factory keeps that domain alive. Each call returns
+    ///   an independent, inactive guard.
     /// - Adapter clones and link-op clones are interchangeable, non-panicking,
     ///   and safe to invoke concurrently. Erased ownership can be restored by
     ///   any clone, even after stack destruction and on another thread.
@@ -165,9 +173,13 @@ where
     ///
     /// These hold for generated Box/Arc adapters with the upstream singly atomic
     /// link. Ordinary non-atomic links do not satisfy this contract.
-    pub unsafe fn with_reclaimer(count: usize, adapter: A, reclaimer: R) -> Self {
+    pub unsafe fn with_guard_factory(
+        count: usize,
+        adapter: A,
+        make_guard: impl Fn() -> G + Send + Sync + 'static,
+    ) -> Self {
         Self {
-            core: Core::new(count, reclaimer),
+            core: Core::new(count, make_guard),
             adapter,
         }
     }
@@ -194,14 +206,14 @@ where
     }
     /// Remove a node without prematurely exposing ownership. LIFO within shards;
     /// Empty is a scan result, Closed means closed/drained (not callbacks done).
-    pub fn pop(&self) -> Result<Retired<A, R, L>, PopError> {
+    pub fn pop(&self) -> Result<Retired<A, G, L>, PopError> {
         let adapter = self.adapter.clone();
-        let reclaimer = self.core.reclaimer.clone();
+        let guards = self.core.guards.clone();
         let link = unsafe { self.core.pop(adapter.link_ops())? };
         Ok(Retired {
             link: Some(link),
             adapter,
-            reclaimer,
+            guards,
         })
     }
     /// Close each shard. Returns whether this call closed any shard.
@@ -216,17 +228,13 @@ where
     pub fn shard_count(&self) -> usize {
         self.core.count()
     }
-    /// Help this stack's backend publish/reclaim pending nodes.
-    pub fn collect(&self) {
-        self.core.reclaimer.collect();
-    }
 }
-impl<A, R, L> Drop for IntrusiveShardedStack<A, R, L>
+impl<A, G, L> Drop for IntrusiveShardedStack<A, G, L>
 where
     A: Adapter + Clone + Send + Sync + 'static,
     A::LinkOps: SinglyLinkedListOps<LinkPtr = NonNull<L>> + Clone,
     Pointer<A>: Send + 'static,
-    R: Reclaimer,
+    G: Guard,
     L: Send + Sync + 'static,
 {
     fn drop(&mut self) {

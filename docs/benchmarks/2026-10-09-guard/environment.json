@@ -1,0 +1,21 @@
+{
+  "baseline_commit": "e2e94ccc1b4e65613600e93652b1c2ffe8ec7459",
+  "rustc": "rustc 1.93.0 (254b59607 2026-01-19)\nbinary: rustc\ncommit-hash: 254b59607d4417e9dffbc307138ae5c86280fe4c\ncommit-date: 2026-01-19\nhost: x86_64-unknown-linux-gnu\nrelease: 1.93.0\nLLVM version: 21.1.8\n",
+  "platform": "Linux-6.18.44-x86_64-with-glibc2.39",
+  "cpu_model": "AMD EPYC 9V74 80-Core Processor",
+  "quota": "800000 100000",
+  "binary_sha256": {
+    "before": "46eb023e7bb0b6f19208b84f6a83b0adfb2db5194718c0268d3d83c9f1c3f14e",
+    "after": "4e702380102b6e857e335cb1e212ecef2990fc01bbdcc7ce06063d55eebc7a0d"
+  },
+  "source_sha256": {
+    "src/core.rs": "300cf8d95b8a06e7e617906b30d4ab261d07950da6c0f6f5ac4572b71c4033f2",
+    "src/epoch.rs": "66bd19f933499cae9b982ec8bfed18ec0213507d2d7ac8fa667b475373895e52",
+    "src/intrusive.rs": "6e1bf363feb8d2672a163d1e9a670017fdff80972038fb8a98ca897a5ac65871",
+    "src/lib.rs": "395bc8e6c739999d3a423d817bc4345bab7e89f00cabe89072a5b0fe1ce6545f",
+    "src/reclaim.rs": "9a9baf9206afed4cfc9bb0606dad6a98ea86512d3d229947e50174f23bfe5feb",
+    "src/tests/value.rs": "4a9879d9a36530cc5a0d53f4d160979fd493073ca11e958ae2ebcd067d794f7f",
+    "src/value.rs": "d0d6e5e80aa198a3be661e585bccc875b2760908fc0699415462dd543e8c6128"
+  },
+  "lockfile_sha256": "151de425b07e0471afefcec8b6b679568716d920e38e74f7f1c7654e85f1f5f9"
+}

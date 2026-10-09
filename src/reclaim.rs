@@ -1,52 +1,60 @@
-//! The stack's only reclamation contract. Backends own their reader protocol.
-use std::sync::atomic::AtomicPtr;
+//! The only reclamation trait. Node layout belongs to upstream intrusive traits.
+use std::sync::{Arc, atomic::AtomicPtr};
 
-/// A reclamation domain shared by a stack, its readers, and its retired nodes.
+/// Per-operation protection and retirement, independent of node type.
 ///
-/// `pin` starts an operation; `protect` loads a head safely; `retire` schedules
-/// destruction **or reuse**. Implementations may batch work. `collect` need not
-/// wait for completion. No operation is required to allocate, but lock-free
-/// progress depends on the chosen backend as well as the adapter.
+/// `protect` enters protection lazily; `unpin` ends it. The stack calls `unpin`
+/// on every scope exit, including unwinding. A guard need not be Send, Sync,
+/// Clone or Default. A constructor closure supplies fresh guards in one domain.
+/// Collection/flush controls belong to the backend, not this trait.
 ///
 /// # Safety
-/// - Clones must refer to the same domain, including after the stack is dropped.
-/// - `protect` must perform at least an Acquire load and return the exact head
+/// - `protect` performs at least an Acquire load and returns the exact head
 ///   bits. Bit zero is a close tag: protect the address with that bit cleared.
-///   Null (including tagged null) needs no protection. For hazard pointers,
-///   publish protection and revalidate the source **before** returning.
-/// - Protection lasts until that guard is dropped or used in another `protect`.
-///   No retired action for the protected address may run during that interval.
-/// - `retire` must execute its action at most once, only when all earlier valid
-///   accesses to that address are finished. This permits rewriting the link,
-///   reinsertion, and deallocation. Never drop an unexecuted action early:
-///   its captures may own the allocation. Leaking pending work is safe.
-/// - `retire` may execute an eligible action synchronously. It must not unwind
-///   before accepting the action; an executed action's panic may propagate.
-///   Cloning the domain must not panic. Guards must release protection on unwind.
-pub unsafe trait Reclaimer: Clone + Send + Sync + 'static {
-    /// Reader state; it need not be Send or Sync.
-    type Guard<'a>
-    where
-        Self: 'a;
-
-    /// Enter a read operation in this domain.
-    fn pin(&self) -> Self::Guard<'_>;
-
-    /// Load and protect a tagged head, replacing this guard's previous protection.
-    ///
+///   Null (including tagged null) needs no protection. Hazard pointers must
+///   publish protection and revalidate the source before returning.
+/// - Protection lasts until `unpin` or the next `protect` on this guard. No
+///   retired action for that address may run while it is protected. Repeated
+///   `protect` calls must safely replace protection, including after `unpin`.
+/// - `unpin` must not panic and must be idempotent. It ends protection, but must
+///   not discard pending retirement work. A panicking `protect` must leave state
+///   that `unpin` can clean up.
+/// - `retire` runs its action at most once, only after all earlier
+///   valid accesses to the address finish. This permits link mutation, reuse,
+///   and deallocation. Never drop an unexecuted action early: its captures may
+///   own the allocation. Leaking pending work is safe.
+/// - `retire` works with an inactive guard as well. It may run an eligible action
+///   synchronously, but must not unwind before accepting it. An executed action's
+///   panic may propagate. Pending work must remain valid after guard/stack drop.
+pub unsafe trait Guard: 'static {
+    /// Load and protect a tagged head, replacing previous protection.
     /// # Safety
-    /// `head` belongs to this domain; all removals preserve the old link until
-    /// retired through this domain. The guard was created by this domain.
-    unsafe fn protect<T>(&self, head: &AtomicPtr<T>, guard: &mut Self::Guard<'_>) -> *mut T;
+    /// The source and this guard belong to the same domain. Removed links remain
+    /// alive and unchanged until retirement through that domain allows reuse.
+    unsafe fn protect<T>(&mut self, head: &AtomicPtr<T>) -> *mut T;
 
-    /// Schedule an action for an unlinked node's **untagged link address**.
-    ///
+    /// Release this guard's protection. Safe to call repeatedly.
+    fn unpin(&mut self);
+
+    /// Retire an unlinked node's **untagged link address**.
     /// # Safety
-    /// The caller owns this removed node, has not already retired it, and will
-    /// not republish or mutate its link before the action. The action must keep
-    /// the allocation alive, even if execution is delayed beyond stack drop.
-    unsafe fn retire(&self, address: *mut (), action: impl FnOnce() + Send + 'static);
+    /// Caller owns the removed node and has not retired it already. Its link
+    /// remains unchanged/unpublished until the action, which keeps its allocation
+    /// alive even if execution occurs after stack destruction.
+    unsafe fn retire(&mut self, address: *mut (), action: impl FnOnce() + Send + 'static);
+}
 
-    /// Publish local pending work and/or help reclaim eligible nodes.
-    fn collect(&self);
+// Thin shared handle: retired callbacks retain the factory/domain without
+// requiring G: Send, and small callbacks still fit Crossbeam's inline buffer.
+pub(crate) type Factory<G> = Arc<Box<dyn Fn() -> G + Send + Sync>>;
+pub(crate) struct Scoped<G: Guard>(pub(crate) G);
+impl<G: Guard> Scoped<G> {
+    pub(crate) fn new(factory: &Factory<G>) -> Self {
+        Self(factory())
+    }
+}
+impl<G: Guard> Drop for Scoped<G> {
+    fn drop(&mut self) {
+        self.0.unpin();
+    }
 }

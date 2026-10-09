@@ -5,13 +5,13 @@
 [![docs.rs](https://docs.rs/concurrent-sharded-stack/badge.svg)](https://docs.rs/concurrent-sharded-stack)
 
 Sharded stacks for unordered object recycling. Rust 1.85+.
-One intrusive Treiber core; one `Reclaimer` trait for reader protection and
+One intrusive Treiber core; one `Guard` trait for reader protection and
 retirement. Crossbeam EBR is the bundled default backend, not part of the core.
 
 | Type | Storage | `pop()` |
 |---|---|---|
-| `ConcurrentShardedStack<T, R = Epoch>` | Internal intrusive nodes; bounded cache of reclaimed blocks | Returns `T` immediately |
-| `IntrusiveShardedStack<A, R = Epoch, L = SinglyLinkedListAtomicLink>` | User's embedded link | Returns `Retired<A, R, L>`; ownership delivered when safe |
+| `ConcurrentShardedStack<T, G = EpochGuard>` | Internal intrusive nodes; bounded cache of reclaimed blocks | Returns `T` immediately |
+| `IntrusiveShardedStack<A, G = EpochGuard, L = SinglyLinkedListAtomicLink>` | User's embedded link | Returns `Retired<A, G, L>`; ownership delivered when safe |
 
 ## Values
 
@@ -27,7 +27,7 @@ pool.push(buffer).unwrap();
 The value API remains safe and accepts borrowed/non-Send values locally; sharing
 requires `T: Send`, not Sync. Only empty storage enters the reclaimer. The default
 cache retains at most 64 ready blocks per shard; `with_cache_capacity(shards,
-capacity, reclaimer)` changes this (zero disables caching). Cache misses allocate.
+capacity)` changes this (zero disables caching). Cache misses allocate.
 Pending retired blocks can exceed the cache limit while readers delay reclamation.
 
 ## Intrusive nodes
@@ -57,15 +57,22 @@ node destruction. Forgetting it leaks ownership.
 
 ## Custom reclamation
 
-Implement `unsafe Reclaimer`: `pin`, `protect`, `retire`, `collect`. Select it via
-`ConcurrentShardedStack::with_reclaimer(shards, backend)` or unsafe
-`IntrusiveShardedStack::with_reclaimer(shards, adapter, backend)`. Clones must share
-one domain. `protect` includes the load/validation protocol needed by hazard
-pointers; retirement uses the **untagged link address**, not the container address.
+Node layout and reclamation are independent: adapters describe nodes; `G: Guard`
+provides exactly `protect`, `unpin`, and `retire`. `protect` establishes protection
+itself, including the load/validation protocol required by hazard pointers. The
+stack calls `unpin` on scope exit, including unwinding. Retirement identifies the
+**untagged link address**, not the containing object.
+
+Supply guards with a normal closure through unsafe
+`IntrusiveShardedStack::with_guard_factory(shards, adapter, make_guard)` or
+`ConcurrentShardedStack::with_guard_factory(shards, cache_capacity, make_guard)`.
+All guards must belong to the same domain instance. Only the factory is shared;
+G need not implement Send, Sync, Clone or Default. Collection/flush is the
+backend's own API, outside the three-method trait.
 See [contracts and migration](docs/intrusive.md) and the independent
 [address-based test backend](tests/support/mod.rs) (blocking reference code).
 
-With Epoch, call `collect()` on each retiring thread before it waits or becomes
+With the default epoch backend, call `collect()` on each retiring thread before it waits or becomes
 idle. A stalled pinned reader can delay reclamation indefinitely. The head
 algorithm uses no locks; progress and allocation costs also depend on the
 backend, adapter, bounded cache queues, allocator, and callbacks.
@@ -83,6 +90,6 @@ backend, adapter, bounded cache queues, allocator, and callbacks.
 The old `intrusive` feature name remains a compatibility flag; both facades now
 share the required intrusive dependency, also with `--no-default-features`.
 
-[Benchmarks](docs/benchmarks/2026-10-09-reclaimer.md) ·
+[Guard refactor validation](docs/benchmarks/2026-10-09-guard.md) ·
 [Validation](CONTRIBUTING.md) · [Changelog](CHANGELOG.md).
 Licensed under [Apache-2.0](LICENSE-APACHE) or [MIT](LICENSE-MIT).

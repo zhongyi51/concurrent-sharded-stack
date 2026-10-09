@@ -1,6 +1,6 @@
 //! Allocation experiment, not a throughput benchmark. Run single-threaded.
 //! The large payload makes node allocations distinguishable from EBR metadata.
-use concurrent_sharded_stack::{ConcurrentShardedStack, Epoch};
+use concurrent_sharded_stack::ConcurrentShardedStack;
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
@@ -24,7 +24,7 @@ unsafe impl GlobalAlloc for Allocator {
 #[global_allocator]
 static ALLOCATOR: Allocator = Allocator;
 fn run(capacity: usize) -> usize {
-    let stack = ConcurrentShardedStack::with_cache_capacity(1, capacity, Epoch);
+    let stack = ConcurrentShardedStack::with_cache_capacity(1, capacity);
     let rounds = 128;
     let batch = 32;
     NODES.store(0, Ordering::Relaxed);

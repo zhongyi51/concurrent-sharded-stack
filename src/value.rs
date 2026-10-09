@@ -1,4 +1,5 @@
-use crate::{Epoch, PopError, PushError, Reclaimer, core::Core, default_shards};
+use crate::reclaim::Scoped;
+use crate::{EpochGuard, Guard, PopError, PushError, core::Core, default_shards};
 use crossbeam_queue::ArrayQueue;
 use intrusive_collections::singly_linked_list::AtomicLinkOps;
 use intrusive_collections::{LinkOps, SinglyLinkedListAtomicLink as Link};
@@ -45,14 +46,14 @@ impl Drop for Block {
 /// a full/dropped cache frees the block. Pending retired storage is not bounded
 /// by the cache capacity. T need not be `'static` or Sync; sharing requires Send.
 /// Ordering is LIFO within a shard. `Empty` is a scan, not a global snapshot.
-pub struct ConcurrentShardedStack<T, R: Reclaimer = Epoch> {
-    core: Core<Link, R>,
+pub struct ConcurrentShardedStack<T, G: Guard = EpochGuard> {
+    core: Core<Link, G>,
     cache: Box<[Arc<ArrayQueue<Block>>]>,
     owns: PhantomData<T>,
 }
 // SAFETY: only the successful remover accesses T; concurrent readers see links.
-unsafe impl<T: Send, R: Reclaimer> Send for ConcurrentShardedStack<T, R> {}
-unsafe impl<T: Send, R: Reclaimer> Sync for ConcurrentShardedStack<T, R> {}
+unsafe impl<T: Send, G: Guard> Send for ConcurrentShardedStack<T, G> {}
+unsafe impl<T: Send, G: Guard> Sync for ConcurrentShardedStack<T, G> {}
 
 impl<T> Default for ConcurrentShardedStack<T> {
     fn default() -> Self {
@@ -67,18 +68,33 @@ impl<T> ConcurrentShardedStack<T> {
     /// Use the default epoch backend and exactly this many shards.
     /// Panics unless the count is a nonzero power of two.
     pub fn with_concurrency(count: usize) -> Self {
-        Self::with_reclaimer(count, Epoch)
-    }
-}
-impl<T, R: Reclaimer> ConcurrentShardedStack<T, R> {
-    /// Select a backend, with 64 ready blocks cached per shard.
-    pub fn with_reclaimer(count: usize, reclaimer: R) -> Self {
-        Self::with_cache_capacity(count, 64, reclaimer)
+        Self::with_cache_capacity(count, 64)
     }
     /// Limit ready cached blocks per shard. Zero disables caching.
-    pub fn with_cache_capacity(count: usize, capacity: usize, reclaimer: R) -> Self {
+    pub fn with_cache_capacity(count: usize, capacity: usize) -> Self {
+        // SAFETY: every inactive guard uses the global epoch domain.
+        unsafe { Self::with_guard_factory(count, capacity, EpochGuard::default) }
+    }
+    /// Flush this thread's default epoch backend; does not wait for callbacks.
+    pub fn collect(&self) {
+        EpochGuard::collect();
+    }
+}
+impl<T, G: Guard> ConcurrentShardedStack<T, G> {
+    /// Select a guard factory and ready-block cache capacity per shard.
+    /// Zero capacity disables caching.
+    ///
+    /// # Safety
+    /// The factory must not panic. Every guard it creates must use the same
+    /// reclamation domain; the factory keeps that domain alive. Each call returns
+    /// an independent, inactive guard.
+    pub unsafe fn with_guard_factory(
+        count: usize,
+        capacity: usize,
+        make_guard: impl Fn() -> G + Send + Sync + 'static,
+    ) -> Self {
         Self {
-            core: Core::new(count, reclaimer),
+            core: Core::new(count, make_guard),
             cache: if capacity == 0 {
                 Box::new([])
             } else {
@@ -131,6 +147,7 @@ impl<T, R: Reclaimer> ConcurrentShardedStack<T, R> {
     /// Immediately return T; defer reuse of its former node storage.
     /// `Closed` means every shard is closed and drained, not callback completion.
     pub fn pop(&self) -> Result<T, PopError> {
+        let mut guard = Scoped::new(&self.core.guards);
         let link = unsafe { self.core.pop(&AtomicLinkOps)? };
         let node = link.cast::<Node<T>>();
         // SAFETY: only the winner touches payload bytes. Never construct &mut
@@ -139,7 +156,7 @@ impl<T, R: Reclaimer> ConcurrentShardedStack<T, R> {
         let block = unsafe { Block::new(node) };
         let cache = self.cache.get(self.core.local()).map(Arc::downgrade);
         unsafe {
-            self.core.reclaimer.retire(link.as_ptr().cast(), move || {
+            guard.0.retire(link.as_ptr().cast(), move || {
                 // Keep the whole Block capture (Send), not its raw pointer field.
                 recycle(block, cache);
             });
@@ -159,10 +176,6 @@ impl<T, R: Reclaimer> ConcurrentShardedStack<T, R> {
     pub fn shard_count(&self) -> usize {
         self.core.count()
     }
-    /// Help the selected backend publish and reclaim pending nodes.
-    pub fn collect(&self) {
-        self.core.reclaimer.collect();
-    }
 }
 fn recycle(block: Block, cache: Option<std::sync::Weak<ArrayQueue<Block>>>) {
     // SAFETY: the backend has completed protection for this link identity.
@@ -175,7 +188,7 @@ fn recycle(block: Block, cache: Option<std::sync::Weak<ArrayQueue<Block>>>) {
         drop(block);
     }
 }
-impl<T, R: Reclaimer> Drop for ConcurrentShardedStack<T, R> {
+impl<T, G: Guard> Drop for ConcurrentShardedStack<T, G> {
     fn drop(&mut self) {
         let drain = || {
             for index in 0..self.core.count() {
@@ -212,7 +225,7 @@ mod tests {
     }
     #[test]
     fn block_reuse_waits_for_old_reader_and_cache_is_bounded() {
-        let s = ConcurrentShardedStack::with_cache_capacity(1, 1, Epoch);
+        let s = ConcurrentShardedStack::with_cache_capacity(1, 1);
         s.push(1).unwrap();
         let guard = crossbeam_epoch::pin();
         assert_eq!(s.pop(), Ok(1));
@@ -247,7 +260,7 @@ mod tests {
     fn zero_cache_and_overaligned_and_zero_sized_values() {
         #[repr(align(256))]
         struct Aligned(u8);
-        let s = ConcurrentShardedStack::with_cache_capacity(1, 0, Epoch);
+        let s = ConcurrentShardedStack::with_cache_capacity(1, 0);
         s.push(Aligned(42)).ok().unwrap();
         assert_eq!(s.pop().unwrap().0, 42);
         assert!(s.cache.is_empty());

@@ -1,33 +1,35 @@
 //! Default backend. The intrusive algorithm itself has no Crossbeam dependency.
-use crate::Reclaimer;
+use crate::Guard;
 use std::sync::atomic::{AtomicPtr, Ordering};
 
-/// Crossbeam's default global epoch domain, with batched retirement.
+/// A lazily pinned guard in Crossbeam's default global epoch domain.
 ///
-/// Call `collect` on each retiring thread before waiting or becoming idle.
+/// Call [`Self::collect`] on each retiring thread before waiting or becoming idle.
 /// Other threads cannot flush that thread's local bag. Collection has no
 /// deadline; a stalled pinned reader can delay reclamation indefinitely.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct Epoch;
+#[derive(Default)]
+pub struct EpochGuard(Option<crossbeam_epoch::Guard>);
 
-// SAFETY: every instance uses the same global collector. Pin precedes loads;
-// Crossbeam delays actions until pre-existing pinned readers have finished.
-unsafe impl Reclaimer for Epoch {
-    type Guard<'a> = crossbeam_epoch::Guard;
-
-    fn pin(&self) -> Self::Guard<'_> {
-        crossbeam_epoch::pin()
+impl EpochGuard {
+    /// Flush this thread's pending work and help collection; does not wait.
+    pub fn collect() {
+        crossbeam_epoch::pin().flush();
     }
+}
 
-    unsafe fn protect<T>(&self, head: &AtomicPtr<T>, _: &mut Self::Guard<'_>) -> *mut T {
+// SAFETY: all guards use the global collector. Pin precedes head loads;
+// Crossbeam delays actions until pre-existing pinned readers have finished.
+unsafe impl Guard for EpochGuard {
+    unsafe fn protect<T>(&mut self, head: &AtomicPtr<T>) -> *mut T {
+        self.0.get_or_insert_with(crossbeam_epoch::pin);
         head.load(Ordering::Acquire)
     }
-
-    unsafe fn retire(&self, _: *mut (), action: impl FnOnce() + Send + 'static) {
-        crossbeam_epoch::pin().defer(action);
+    fn unpin(&mut self) {
+        self.0.take();
     }
-
-    fn collect(&self) {
-        crossbeam_epoch::pin().flush();
+    unsafe fn retire(&mut self, _: *mut (), action: impl FnOnce() + Send + 'static) {
+        self.0
+            .get_or_insert_with(crossbeam_epoch::pin)
+            .defer(action);
     }
 }

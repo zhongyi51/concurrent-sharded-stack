@@ -18,10 +18,10 @@ pub mod epoch;
 pub mod intrusive;
 mod reclaim;
 mod value;
-pub use epoch::Epoch;
+pub use epoch::EpochGuard;
 pub use intrusive::{IntrusiveShardedStack, Retired};
 pub use intrusive_collections;
-pub use reclaim::Reclaimer;
+pub use reclaim::Guard;
 pub use value::ConcurrentShardedStack;
 
 static NEXT_THREAD_ID: AtomicUsize = AtomicUsize::new(0);

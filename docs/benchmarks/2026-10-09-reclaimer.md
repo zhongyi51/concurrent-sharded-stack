@@ -1,5 +1,8 @@
 # Reclaimer abstraction and cached values — 2026-10-09
 
+Historical measurements of the earlier `Reclaimer` draft (`e2e94cc`), before
+the three-method `Guard` revision. See [current validation](2026-10-09-guard.md).
+
 This change shares one intrusive algorithm and makes protection/retirement
 replaceable. It demonstrably reuses value-node storage; it is **not a universal
 throughput improvement**. The ordinary API retains immediate payload delivery.

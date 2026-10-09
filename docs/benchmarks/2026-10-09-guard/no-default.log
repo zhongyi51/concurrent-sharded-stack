@@ -1,0 +1,189 @@
+   Compiling concurrent-sharded-stack v0.4.0 (/workspace/scratch/6b153def8d8f/concurrent-sharded-stack)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.58s
+     Running unittests src/lib.rs (target/debug/deps/concurrent_sharded_stack-f14ee81fb3b96597)
+
+running 18 tests
+test tests::close_works ... ok
+test tests::close_after_drain_returns_closed ... ok
+test tests::close_propagates_per_shard_and_can_have_multiple_winners ... ok
+test tests::new_requires_power_of_two ... ok
+test tests::empty_scan_is_not_a_global_snapshot ... ok
+test tests::partially_drained_stack_drops_each_value_once ... ok
+test tests::popped_values_are_dropped_exactly_once ... ok
+test tests::push_pop_single_thread ... ok
+test tests::remaining_values_are_dropped_when_stack_is_dropped ... ok
+test tests::new_panics_if_not_power_of_two - should panic ... ok
+test tests::payload_panic_still_drops_remaining_nodes_and_shards ... ok
+test value::tests::zero_cache_and_overaligned_and_zero_sized_values ... ok
+test tests::multi_thread_push_pop ... ok
+test tests::concurrent_drop_counter_no_double_free ... ok
+test value::tests::block_reuse_waits_for_old_reader_and_cache_is_bounded ... ok
+test tests::no_element_loss_after_close_asymmetric ... ok
+test tests::no_element_loss_few_threads_many_shards ... ok
+test tests::no_element_loss_open_asymmetric ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.89s
+
+     Running tests/guard.rs (target/debug/deps/guard-9e0a7f92068bcf59)
+
+running 8 tests
+test hazard_identity_is_untagged_link_not_container_and_other_nodes_progress ... ok
+test guard_can_replace_protection_and_reenter_after_idempotent_unpin ... ok
+test custom_backend_value_stack_preserves_borrowed_and_non_send_payloads ... ok
+test retire_token_keeps_custom_domain_alive_and_callbacks_can_reinsert ... ok
+test panicking_callback_releases_link_and_ownership_once ... ok
+test send_but_not_sync_values_can_cross_threads ... ok
+test scope_unpins_on_empty_closed_and_protection_panic ... ok
+test reference_hazard_backend_concurrent_transfer_and_reuse ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/intrusive.rs (target/debug/deps/intrusive-fb9534a76af04cd4)
+
+running 12 tests
+test box_identity_lifo_and_upstream_transfer_after_grace_period ... ok
+test dropped_retired_token_defers_exactly_once ... ok
+test destructor_panic_drains_remaining_live_nodes ... ok
+test flushed_partial_batch_can_be_collected_while_retiring_thread_is_idle ... ok
+test old_reader_prevents_delivery_release_and_reinsertion ... ok
+test duplicate_acquisition_across_collections_has_one_winner ... ok
+test validates_shard_count ... ok
+test retired_token_outlives_stack_and_can_move_between_threads ... ok
+test thread_exit_flushes_partial_retirement_batch ... ok
+test racing_close_preserves_accepted_and_rejected_nodes ... ok
+test callback_can_reinsert_without_aba_or_lost_nodes ... ok
+test concurrent_transfer_delivers_each_id_once ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests/intrusive_custom.rs (target/debug/deps/intrusive_custom-ad3eea1a5bd3d779)
+
+running 1 test
+test custom_link_ops_and_adapter_round_trip ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running benches/cache_profile.rs (target/debug/deps/cache_profile-e8900c8b63fbf186)
+cache_capacity=0; pushes=4096; node_allocations=4096; node_bytes=8200
+cache_capacity=64; pushes=4096; node_allocations=32; node_bytes=8200
+     Running benches/intrusive_bench.rs (target/debug/deps/intrusive_bench-b0e2c166bb600ad5)
+Gnuplot not found, using plotters backend
+Testing epoch_pool/intrusive/1w
+Success
+Testing epoch_pool/value_stack/1w
+Success
+Testing epoch_pool/mutex_vec/1w
+Success
+Testing epoch_pool/intrusive/4w
+Success
+Testing epoch_pool/value_stack/4w
+Success
+Testing epoch_pool/mutex_vec/4w
+Success
+Testing epoch_pool/intrusive/8w
+Success
+Testing epoch_pool/value_stack/8w
+Success
+Testing epoch_pool/mutex_vec/8w
+Success
+
+Testing epoch_transfer/intrusive/1p_1c
+Success
+Testing epoch_transfer/value_stack/1p_1c
+Success
+Testing epoch_transfer/mutex_vec/1p_1c
+Success
+Testing epoch_transfer/intrusive/4p_4c
+Success
+Testing epoch_transfer/value_stack/4p_4c
+Success
+Testing epoch_transfer/mutex_vec/4p_4c
+Success
+Testing epoch_transfer/intrusive/8p_8c
+Success
+Testing epoch_transfer/value_stack/8p_8c
+Success
+Testing epoch_transfer/mutex_vec/8p_8c
+Success
+
+     Running benches/retirement_profile.rs (target/debug/deps/retirement_profile-a84038b64eab8423)
+mode=intrusive; nodes=65536; payload bytes=16
+push: Counts { allocations: 0, bytes: 0, large_allocations: 0 }; bytes/node=0.00
+pop + defer: Counts { allocations: 1023, bytes: 2119656, large_allocations: 1023 }; bytes/node=32.34
+flush + delivery: Counts { allocations: 127, bytes: 263144, large_allocations: 127 }; bytes/node=4.02
+     Running benches/stack_bench.rs (target/debug/deps/stack_bench-423a8e3c9e7481e9)
+Gnuplot not found, using plotters backend
+Testing object_pool/sharded/1
+Success
+Testing object_pool/sharded/4
+Success
+Testing object_pool/sharded/8
+Success
+Testing object_pool/lockfree_lifo/1
+Success
+Testing object_pool/lockfree_lifo/4
+Success
+Testing object_pool/lockfree_lifo/8
+Success
+Testing object_pool/mutex_vec_lifo/1
+Success
+Testing object_pool/mutex_vec_lifo/4
+Success
+Testing object_pool/mutex_vec_lifo/8
+Success
+Testing object_pool/segqueue_fifo/1
+Success
+Testing object_pool/segqueue_fifo/4
+Success
+Testing object_pool/segqueue_fifo/8
+Success
+Testing object_pool/arrayqueue_fifo/1
+Success
+Testing object_pool/arrayqueue_fifo/4
+Success
+Testing object_pool/arrayqueue_fifo/8
+Success
+
+Testing mpmc/sharded/1p_1c
+Success
+Testing mpmc/sharded/4p_4c
+Success
+Testing mpmc/sharded/8p_8c
+Success
+Testing mpmc/lockfree_lifo/1p_1c
+Success
+Testing mpmc/lockfree_lifo/4p_4c
+Success
+Testing mpmc/lockfree_lifo/8p_8c
+Success
+Testing mpmc/mutex_vec_lifo/1p_1c
+Success
+Testing mpmc/mutex_vec_lifo/4p_4c
+Success
+Testing mpmc/mutex_vec_lifo/8p_8c
+Success
+Testing mpmc/segqueue_fifo/1p_1c
+Success
+Testing mpmc/segqueue_fifo/4p_4c
+Success
+Testing mpmc/segqueue_fifo/8p_8c
+Success
+Testing mpmc/arrayqueue_fifo/1p_1c
+Success
+Testing mpmc/arrayqueue_fifo/4p_4c
+Success
+Testing mpmc/arrayqueue_fifo/8p_8c
+Success
+
+     Running unittests examples/buffer_recycling.rs (target/debug/examples/buffer_recycling-4ecfb3638d2f4de7)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples/intrusive_recycling.rs (target/debug/examples/intrusive_recycling-b1af58ea139252bc)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
