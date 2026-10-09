@@ -28,7 +28,7 @@ jobs:
         run: cargo test --all-targets --verbose
       - name: Doc tests
         run: cargo test --doc --verbose
-      - name: Without intrusive support
+      - name: Without default feature flags
         run: |
           cargo test --all-targets --no-default-features
           cargo test --doc --no-default-features
@@ -97,4 +97,8 @@ jobs:
       - name: Run Miri
         run: cargo miri test --lib
       - name: Intrusive ownership and custom trait tests
-        run: cargo miri test --test intrusive --test intrusive_custom
+        run: cargo miri test --test intrusive --test intrusive_custom --test guard
+      - name: Guard contract with strict provenance and leak checking
+        env:
+          MIRIFLAGS: -Zmiri-tree-borrows -Zmiri-strict-provenance
+        run: cargo miri test --test guard

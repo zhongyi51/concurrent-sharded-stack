@@ -1,0 +1,37 @@
+Gnuplot not found, using plotters backend
+Benchmarking epoch_transfer/intrusive/1p_1c
+Benchmarking epoch_transfer/intrusive/1p_1c: Warming up for 1.0000 s
+Benchmarking epoch_transfer/intrusive/1p_1c: Collecting 20 samples in estimated 3.1935 s (1890 iterations)
+Benchmarking epoch_transfer/intrusive/1p_1c: Analyzing
+epoch_transfer/intrusive/1p_1c
+                        time:   [1.3633 ms 1.4196 ms 1.4908 ms]
+                        thrpt:  [6.7080 Melem/s 7.0441 Melem/s 7.3351 Melem/s]
+Benchmarking epoch_transfer/intrusive/4p_4c
+Benchmarking epoch_transfer/intrusive/4p_4c: Warming up for 1.0000 s
+Benchmarking epoch_transfer/intrusive/4p_4c: Collecting 20 samples in estimated 3.1091 s (630 iterations)
+Benchmarking epoch_transfer/intrusive/4p_4c: Analyzing
+epoch_transfer/intrusive/4p_4c
+                        time:   [4.6931 ms 5.1490 ms 5.5814 ms]
+                        thrpt:  [7.1666 Melem/s 7.7684 Melem/s 8.5232 Melem/s]
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+Benchmarking epoch_transfer/mutex_vec/4p_4c
+Benchmarking epoch_transfer/mutex_vec/4p_4c: Warming up for 1.0000 s
+Benchmarking epoch_transfer/mutex_vec/4p_4c: Collecting 20 samples in estimated 3.4522 s (420 iterations)
+Benchmarking epoch_transfer/mutex_vec/4p_4c: Analyzing
+epoch_transfer/mutex_vec/4p_4c
+                        time:   [9.3449 ms 11.123 ms 12.785 ms]
+                        thrpt:  [3.1287 Melem/s 3.5963 Melem/s 4.2804 Melem/s]
+Benchmarking epoch_transfer/value_stack/8p_8c
+Benchmarking epoch_transfer/value_stack/8p_8c: Warming up for 1.0000 s
+
+Warning: Unable to complete 20 samples in 3.0s. You may wish to increase target time to 3.7s, enable flat sampling, or reduce sample count to 10.
+Benchmarking epoch_transfer/value_stack/8p_8c: Collecting 20 samples in estimated 3.6891 s (210 iterations)
+Benchmarking epoch_transfer/value_stack/8p_8c: Analyzing
+epoch_transfer/value_stack/8p_8c
+                        time:   [15.487 ms 17.417 ms 18.723 ms]
+                        thrpt:  [4.2728 Melem/s 4.5933 Melem/s 5.1656 Melem/s]
+Found 2 outliers among 20 measurements (10.00%)
+  1 (5.00%) low severe
+  1 (5.00%) low mild
+

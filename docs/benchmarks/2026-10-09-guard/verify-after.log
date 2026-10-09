@@ -1,0 +1,30 @@
+Gnuplot not found, using plotters backend
+Benchmarking epoch_transfer/intrusive/1p_1c
+Benchmarking epoch_transfer/intrusive/1p_1c: Warming up for 1.0000 s
+Benchmarking epoch_transfer/intrusive/1p_1c: Collecting 20 samples in estimated 3.1486 s (1890 iterations)
+Benchmarking epoch_transfer/intrusive/1p_1c: Analyzing
+epoch_transfer/intrusive/1p_1c
+                        time:   [1.6342 ms 1.7537 ms 1.8604 ms]
+                        thrpt:  [5.3751 Melem/s 5.7024 Melem/s 6.1191 Melem/s]
+Benchmarking epoch_transfer/intrusive/4p_4c
+Benchmarking epoch_transfer/intrusive/4p_4c: Warming up for 1.0000 s
+Benchmarking epoch_transfer/intrusive/4p_4c: Collecting 20 samples in estimated 4.0088 s (630 iterations)
+Benchmarking epoch_transfer/intrusive/4p_4c: Analyzing
+epoch_transfer/intrusive/4p_4c
+                        time:   [7.2169 ms 7.9274 ms 8.6858 ms]
+                        thrpt:  [4.6052 Melem/s 5.0458 Melem/s 5.5426 Melem/s]
+Benchmarking epoch_transfer/mutex_vec/4p_4c
+Benchmarking epoch_transfer/mutex_vec/4p_4c: Warming up for 1.0000 s
+Benchmarking epoch_transfer/mutex_vec/4p_4c: Collecting 20 samples in estimated 3.9160 s (420 iterations)
+Benchmarking epoch_transfer/mutex_vec/4p_4c: Analyzing
+epoch_transfer/mutex_vec/4p_4c
+                        time:   [9.3817 ms 10.579 ms 11.984 ms]
+                        thrpt:  [3.3377 Melem/s 3.7812 Melem/s 4.2636 Melem/s]
+Benchmarking epoch_transfer/value_stack/8p_8c
+Benchmarking epoch_transfer/value_stack/8p_8c: Warming up for 1.0000 s
+Benchmarking epoch_transfer/value_stack/8p_8c: Collecting 20 samples in estimated 5.1574 s (420 iterations)
+Benchmarking epoch_transfer/value_stack/8p_8c: Analyzing
+epoch_transfer/value_stack/8p_8c
+                        time:   [12.370 ms 13.707 ms 15.002 ms]
+                        thrpt:  [5.3327 Melem/s 5.8366 Melem/s 6.4673 Melem/s]
+

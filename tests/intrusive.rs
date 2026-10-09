@@ -1,7 +1,5 @@
-#![cfg(feature = "intrusive")]
 use concurrent_sharded_stack::{
-    EpochAdapter, IntrusiveShardedStack, PopError, PushError, Retired, intrusive,
-    intrusive_collections,
+    IntrusiveShardedStack, PopError, PushError, Retired, intrusive, intrusive_collections,
 };
 use intrusive_collections::{SinglyLinkedList, SinglyLinkedListAtomicLink, intrusive_adapter};
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -19,9 +17,7 @@ struct Entry {
 }
 intrusive_adapter!(BoxAdapter = Box<Entry>: Entry { link => SinglyLinkedListAtomicLink });
 intrusive_adapter!(ArcAdapter = Arc<Entry>: Entry { link => SinglyLinkedListAtomicLink });
-// SAFETY: generated stateless adapters and owning pointers satisfy EpochAdapter.
-unsafe impl EpochAdapter for BoxAdapter {}
-unsafe impl EpochAdapter for ArcAdapter {}
+// SAFETY: generated stateless adapters and owning pointers satisfy the constructor contract.
 fn entry(id: usize) -> Box<Entry> {
     Box::new(Entry {
         id,
@@ -41,8 +37,10 @@ fn drive_until(mut ready: impl FnMut() -> bool) {
 }
 fn receive<A>(retired: Retired<A>) -> <A::PointerOps as intrusive_collections::PointerOps>::Pointer
 where
-    A: EpochAdapter,
-    A::LinkOps: concurrent_sharded_stack::ConcurrentLinkOps,
+    A: intrusive_collections::Adapter + Clone + Send + Sync + 'static,
+    A::LinkOps: intrusive_collections::singly_linked_list::SinglyLinkedListOps<
+            LinkPtr = std::ptr::NonNull<SinglyLinkedListAtomicLink>,
+        > + Clone,
     <A::PointerOps as intrusive_collections::PointerOps>::Pointer: Send + 'static,
 {
     let (tx, rx) = mpsc::channel();
@@ -57,7 +55,7 @@ where
 
 #[test]
 fn box_identity_lifo_and_upstream_transfer_after_grace_period() {
-    let stack = IntrusiveShardedStack::with_concurrency(1, BoxAdapter::new());
+    let stack = unsafe { IntrusiveShardedStack::with_concurrency(1, BoxAdapter::new()) };
     let a = entry(1);
     let address = &*a as *const Entry;
     stack.push(a).unwrap();
@@ -75,7 +73,7 @@ fn box_identity_lifo_and_upstream_transfer_after_grace_period() {
 
 #[test]
 fn old_reader_prevents_delivery_release_and_reinsertion() {
-    let stack = IntrusiveShardedStack::with_concurrency(1, ArcAdapter::new());
+    let stack = unsafe { IntrusiveShardedStack::with_concurrency(1, ArcAdapter::new()) };
     let a = Arc::new(Entry::default());
     stack.push(a.clone()).unwrap();
     let guard = crossbeam_epoch::pin();
@@ -112,7 +110,7 @@ fn old_reader_prevents_delivery_release_and_reinsertion() {
 
 #[test]
 fn retired_token_outlives_stack_and_can_move_between_threads() {
-    let stack = IntrusiveShardedStack::with_concurrency(4, BoxAdapter::new());
+    let stack = unsafe { IntrusiveShardedStack::with_concurrency(4, BoxAdapter::new()) };
     stack.push(entry(9)).unwrap();
     let retired = stack.pop().unwrap();
     drop(stack);
@@ -123,7 +121,7 @@ fn retired_token_outlives_stack_and_can_move_between_threads() {
 
 #[test]
 fn flushed_partial_batch_can_be_collected_while_retiring_thread_is_idle() {
-    let stack = IntrusiveShardedStack::with_concurrency(1, BoxAdapter::new());
+    let stack = unsafe { IntrusiveShardedStack::with_concurrency(1, BoxAdapter::new()) };
     stack.push(entry(7)).unwrap();
     let retired = stack.pop().unwrap();
     // Ensure the retiring thread cannot deliver its own callback before idle.
@@ -154,7 +152,7 @@ fn flushed_partial_batch_can_be_collected_while_retiring_thread_is_idle() {
 
 #[test]
 fn thread_exit_flushes_partial_retirement_batch() {
-    let stack = IntrusiveShardedStack::with_concurrency(1, BoxAdapter::new());
+    let stack = unsafe { IntrusiveShardedStack::with_concurrency(1, BoxAdapter::new()) };
     stack.push(entry(11)).unwrap();
     let retired = stack.pop().unwrap();
     let old_reader = crossbeam_epoch::pin();
@@ -176,8 +174,8 @@ fn thread_exit_flushes_partial_retirement_batch() {
 fn duplicate_acquisition_across_collections_has_one_winner() {
     let a = Arc::new(Entry::default());
     let stacks = [
-        IntrusiveShardedStack::with_concurrency(1, ArcAdapter::new()),
-        IntrusiveShardedStack::with_concurrency(1, ArcAdapter::new()),
+        unsafe { IntrusiveShardedStack::with_concurrency(1, ArcAdapter::new()) },
+        unsafe { IntrusiveShardedStack::with_concurrency(1, ArcAdapter::new()) },
     ];
     let barrier = Barrier::new(2);
     thread::scope(|scope| {
@@ -219,12 +217,11 @@ impl Drop for Counted {
     }
 }
 intrusive_adapter!(CountedAdapter = Box<Counted>: Counted { link => SinglyLinkedListAtomicLink });
-unsafe impl EpochAdapter for CountedAdapter {}
 
 #[test]
 fn dropped_retired_token_defers_exactly_once() {
     let drops = Arc::new(AtomicUsize::new(0));
-    let stack = IntrusiveShardedStack::with_concurrency(1, CountedAdapter::new());
+    let stack = unsafe { IntrusiveShardedStack::with_concurrency(1, CountedAdapter::new()) };
     stack
         .push(Box::new(Counted {
             link: SinglyLinkedListAtomicLink::new(),
@@ -246,7 +243,7 @@ fn dropped_retired_token_defers_exactly_once() {
 #[test]
 fn destructor_panic_drains_remaining_live_nodes() {
     let drops = Arc::new(AtomicUsize::new(0));
-    let stack = IntrusiveShardedStack::with_concurrency(4, CountedAdapter::new());
+    let stack = unsafe { IntrusiveShardedStack::with_concurrency(4, CountedAdapter::new()) };
     thread::scope(|scope| {
         for worker in 0..4 {
             let stack = &stack;
@@ -272,7 +269,7 @@ fn destructor_panic_drains_remaining_live_nodes() {
 fn concurrent_transfer_delivers_each_id_once() {
     let count = if cfg!(miri) { 8 } else { 4000 };
     for shards in [1, 4, 16] {
-        let stack = IntrusiveShardedStack::with_concurrency(shards, BoxAdapter::new());
+        let stack = unsafe { IntrusiveShardedStack::with_concurrency(shards, BoxAdapter::new()) };
         let seen = Arc::new(
             (0..4 * count)
                 .map(|_| AtomicUsize::new(0))
@@ -322,10 +319,7 @@ fn concurrent_transfer_delivers_each_id_once() {
 
 #[test]
 fn callback_can_reinsert_without_aba_or_lost_nodes() {
-    let stack = Arc::new(IntrusiveShardedStack::with_concurrency(
-        4,
-        BoxAdapter::new(),
-    ));
+    let stack = Arc::new(unsafe { IntrusiveShardedStack::with_concurrency(4, BoxAdapter::new()) });
     let delivered = Arc::new(AtomicUsize::new(0));
     for id in 0..16 {
         stack.push(entry(id)).unwrap();
@@ -364,7 +358,7 @@ fn callback_can_reinsert_without_aba_or_lost_nodes() {
 
 #[test]
 fn racing_close_preserves_accepted_and_rejected_nodes() {
-    let stack = IntrusiveShardedStack::with_concurrency(4, BoxAdapter::new());
+    let stack = unsafe { IntrusiveShardedStack::with_concurrency(4, BoxAdapter::new()) };
     let barrier = Barrier::new(5);
     let count = if cfg!(miri) { 8 } else { 1000 };
     let mut ids = thread::scope(|scope| {
@@ -417,7 +411,10 @@ fn racing_close_preserves_accepted_and_rejected_nodes() {
 fn validates_shard_count() {
     for n in [0, 3] {
         assert!(
-            catch_unwind(|| IntrusiveShardedStack::with_concurrency(n, BoxAdapter::new())).is_err()
+            catch_unwind(|| unsafe {
+                IntrusiveShardedStack::with_concurrency(n, BoxAdapter::new())
+            })
+            .is_err()
         );
     }
 }

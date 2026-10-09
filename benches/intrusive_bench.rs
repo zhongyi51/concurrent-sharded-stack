@@ -1,6 +1,6 @@
 //! End-to-end completed recycling cycles / transfers, including epoch delivery.
 use concurrent_sharded_stack::{
-    ConcurrentShardedStack, EpochAdapter, IntrusiveShardedStack, intrusive, intrusive_collections,
+    ConcurrentShardedStack, IntrusiveShardedStack, intrusive, intrusive_collections,
 };
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use intrusive_collections::{SinglyLinkedListAtomicLink, intrusive_adapter};
@@ -17,8 +17,6 @@ struct Node {
     id: usize,
 }
 intrusive_adapter!(NodeAdapter = Box<Node>: Node { link => SinglyLinkedListAtomicLink });
-// SAFETY: stateless generated adapter using Box and the atomic singly link.
-unsafe impl EpochAdapter for NodeAdapter {}
 trait Pool: Send + Sync + 'static {
     fn new(shards: usize) -> Self;
     fn push(&self, node: Box<Node>);
@@ -26,7 +24,7 @@ trait Pool: Send + Sync + 'static {
 }
 impl Pool for IntrusiveShardedStack<NodeAdapter> {
     fn new(shards: usize) -> Self {
-        Self::with_concurrency(shards, NodeAdapter::new())
+        unsafe { Self::with_concurrency(shards, NodeAdapter::new()) }
     }
     fn push(&self, node: Box<Node>) {
         self.push(node).unwrap();
