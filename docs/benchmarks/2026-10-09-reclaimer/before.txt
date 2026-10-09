@@ -1,0 +1,26 @@
+Gnuplot not found, using plotters backend
+Benchmarking epoch_pool/intrusive/1w
+Benchmarking epoch_pool/intrusive/1w: Warming up for 500.00 ms
+Benchmarking epoch_pool/intrusive/1w: Collecting 20 samples in estimated 1.3098 s (630 iterations)
+Benchmarking epoch_pool/intrusive/1w: Analyzing
+epoch_pool/intrusive/1w time:   [2.0846 ms 2.1185 ms 2.1503 ms]
+                        thrpt:  [4.6506 Melem/s 4.7203 Melem/s 4.7972 Melem/s]
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+Benchmarking epoch_pool/value_stack/1w
+Benchmarking epoch_pool/value_stack/1w: Warming up for 500.00 ms
+Benchmarking epoch_pool/value_stack/1w: Collecting 20 samples in estimated 1.1572 s (1260 iterations)
+Benchmarking epoch_pool/value_stack/1w: Analyzing
+epoch_pool/value_stack/1w
+                        time:   [881.80 µs 896.22 µs 916.83 µs]
+                        thrpt:  [10.907 Melem/s 11.158 Melem/s 11.340 Melem/s]
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high severe
+Benchmarking epoch_pool/mutex_vec/1w
+Benchmarking epoch_pool/mutex_vec/1w: Warming up for 500.00 ms
+Benchmarking epoch_pool/mutex_vec/1w: Collecting 20 samples in estimated 1.0162 s (1890 iterations)
+Benchmarking epoch_pool/mutex_vec/1w: Analyzing
+epoch_pool/mutex_vec/1w time:   [502.76 µs 509.80 µs 516.13 µs]
+                        thrpt:  [19.375 Melem/s 19.616 Melem/s 19.890 Melem/s]
+Benchmarking epoch_pool/intrusive/4w
+Benchmarking epoch_pool/intrusive/4w: Warming up for 500.00 ms

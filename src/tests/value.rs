@@ -1,6 +1,8 @@
 use super::*;
+use crossbeam_epoch as epoch;
 use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::sync::{Arc, mpsc};
+use std::thread;
 use std::time::{Duration, Instant};
 
 // One-shot, per-thread hooks expose deterministic interleavings without

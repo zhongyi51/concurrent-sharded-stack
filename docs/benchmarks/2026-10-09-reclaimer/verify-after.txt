@@ -1,0 +1,39 @@
+Gnuplot not found, using plotters backend
+Benchmarking epoch_pool/intrusive/4w
+Benchmarking epoch_pool/intrusive/4w: Warming up for 1.0000 s
+Benchmarking epoch_pool/intrusive/4w: Collecting 20 samples in estimated 4.9307 s (420 iterations)
+Benchmarking epoch_pool/intrusive/4w: Analyzing
+epoch_pool/intrusive/4w time:   [12.958 ms 15.858 ms 18.048 ms]
+                        thrpt:  [2.2163 Melem/s 2.5224 Melem/s 3.0868 Melem/s]
+Benchmarking epoch_pool/value_stack/4w
+Benchmarking epoch_pool/value_stack/4w: Warming up for 1.0000 s
+Benchmarking epoch_pool/value_stack/4w: Collecting 20 samples in estimated 3.0287 s (1050 iterations)
+Benchmarking epoch_pool/value_stack/4w: Analyzing
+epoch_pool/value_stack/4w
+                        time:   [2.7606 ms 2.7911 ms 2.8375 ms]
+                        thrpt:  [14.097 Melem/s 14.331 Melem/s 14.489 Melem/s]
+Found 2 outliers among 20 measurements (10.00%)
+  1 (5.00%) high mild
+  1 (5.00%) high severe
+
+Benchmarking epoch_transfer/intrusive/8p_8c
+Benchmarking epoch_transfer/intrusive/8p_8c: Warming up for 1.0000 s
+Benchmarking epoch_transfer/intrusive/8p_8c: Collecting 20 samples in estimated 3.6356 s (420 iterations)
+Benchmarking epoch_transfer/intrusive/8p_8c: Analyzing
+epoch_transfer/intrusive/8p_8c
+                        time:   [7.2761 ms 7.4025 ms 7.5971 ms]
+                        thrpt:  [10.530 Melem/s 10.807 Melem/s 10.995 Melem/s]
+Found 4 outliers among 20 measurements (20.00%)
+  1 (5.00%) high mild
+  3 (15.00%) high severe
+Benchmarking epoch_transfer/value_stack/8p_8c
+Benchmarking epoch_transfer/value_stack/8p_8c: Warming up for 1.0000 s
+Benchmarking epoch_transfer/value_stack/8p_8c: Collecting 20 samples in estimated 3.8817 s (420 iterations)
+Benchmarking epoch_transfer/value_stack/8p_8c: Analyzing
+epoch_transfer/value_stack/8p_8c
+                        time:   [9.6592 ms 10.455 ms 11.568 ms]
+                        thrpt:  [6.9155 Melem/s 7.6515 Melem/s 8.2822 Melem/s]
+Found 3 outliers among 20 measurements (15.00%)
+  2 (10.00%) high mild
+  1 (5.00%) high severe
+

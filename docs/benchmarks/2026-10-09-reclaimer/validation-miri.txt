@@ -1,0 +1,115 @@
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.26
+   Compiling quote v1.0.47
+   Compiling crossbeam-utils v0.8.23
+   Compiling serde_core v1.0.229
+   Compiling crossbeam-epoch v0.9.21
+   Compiling zerocopy v0.8.62
+   Compiling crossbeam-deque v0.8.8
+   Compiling zmij v1.0.23
+   Compiling serde v1.0.229
+   Compiling autocfg v1.5.1
+   Compiling cfg-if v1.0.5
+   Compiling either v1.19.0
+   Compiling rayon-core v1.13.0
+   Compiling serde_json v1.0.151
+   Compiling libc v0.2.190
+   Compiling memchr v2.8.3
+   Compiling ciborium-io v0.2.2
+   Compiling clap_lex v1.1.1
+   Compiling plotters-backend v0.3.7
+   Compiling num-traits v0.2.19
+   Compiling anstyle v1.0.14
+   Compiling itoa v1.0.18
+   Compiling regex-syntax v0.8.11
+   Compiling syn v2.0.119
+   Compiling syn v3.0.6
+   Compiling clap_builder v4.6.7
+   Compiling plotters-svg v0.3.7
+   Compiling itertools v0.10.5
+   Compiling cast v0.3.0
+   Compiling same-file v1.0.6
+   Compiling walkdir v2.5.0
+   Compiling plotters v0.3.7
+   Compiling is-terminal v0.4.17
+   Compiling rayon v1.12.0
+   Compiling regex-automata v0.4.18
+   Compiling criterion-plot v0.5.0
+   Compiling clap v4.6.7
+   Compiling crossbeam-queue v0.3.14
+   Compiling scopeguard v1.2.0
+   Compiling oorandom v11.1.5
+   Compiling anes v0.1.6
+   Compiling intrusive-collections v0.10.3
+   Compiling once_cell v1.21.4
+   Compiling owned-alloc v0.2.0
+   Compiling lockfree v0.5.1
+   Compiling concurrent-sharded-stack v0.4.0 (/workspace/scratch/6b153def8d8f/concurrent-sharded-stack)
+   Compiling regex v1.13.1
+   Compiling serde_derive v1.0.229
+   Compiling zerocopy-derive v0.8.62
+   Compiling tinytemplate v1.2.1
+   Compiling half v2.7.1
+   Compiling ciborium-ll v0.2.2
+   Compiling ciborium v0.2.2
+   Compiling criterion v0.5.1
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 10.67s
+     Running unittests src/lib.rs (target/miri/x86_64-unknown-linux-gnu/debug/build/concurrent-sharded-stack/8215191f85e5c9c7/out/concurrent_sharded_stack-8215191f85e5c9c7)
+
+running 18 tests
+test tests::close_after_drain_returns_closed ... ok
+test tests::close_propagates_per_shard_and_can_have_multiple_winners ... ok
+test tests::close_works ... ok
+test tests::concurrent_drop_counter_no_double_free ... ok
+test tests::empty_scan_is_not_a_global_snapshot ... ok
+test tests::multi_thread_push_pop ... ok
+test tests::new_panics_if_not_power_of_two - should panic ... ok
+test tests::new_requires_power_of_two ... ok
+test tests::no_element_loss_after_close_asymmetric ... ok
+test tests::no_element_loss_few_threads_many_shards ... ok
+test tests::no_element_loss_open_asymmetric ... ignored
+test tests::partially_drained_stack_drops_each_value_once ... ok
+test tests::payload_panic_still_drops_remaining_nodes_and_shards ... ok
+test tests::popped_values_are_dropped_exactly_once ... ok
+test tests::push_pop_single_thread ... ok
+test tests::remaining_values_are_dropped_when_stack_is_dropped ... ok
+test value::tests::block_reuse_waits_for_old_reader_and_cache_is_bounded ... ok
+test value::tests::zero_cache_and_overaligned_and_zero_sized_values ... ok
+
+test result: ok. 17 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 63.12s
+
+     Running tests/intrusive.rs (target/miri/x86_64-unknown-linux-gnu/debug/build/concurrent-sharded-stack/f9ab298364aa18ab/out/intrusive-f9ab298364aa18ab)
+
+running 12 tests
+test box_identity_lifo_and_upstream_transfer_after_grace_period ... ok
+test callback_can_reinsert_without_aba_or_lost_nodes ... ok
+test concurrent_transfer_delivers_each_id_once ... ok
+test destructor_panic_drains_remaining_live_nodes ... ok
+test dropped_retired_token_defers_exactly_once ... ok
+test duplicate_acquisition_across_collections_has_one_winner ... ok
+test flushed_partial_batch_can_be_collected_while_retiring_thread_is_idle ... ok
+test old_reader_prevents_delivery_release_and_reinsertion ... ok
+test racing_close_preserves_accepted_and_rejected_nodes ... ok
+test retired_token_outlives_stack_and_can_move_between_threads ... ok
+test thread_exit_flushes_partial_retirement_batch ... ok
+test validates_shard_count ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.70s
+
+     Running tests/intrusive_custom.rs (target/miri/x86_64-unknown-linux-gnu/debug/build/concurrent-sharded-stack/a71b8942e5802b15/out/intrusive_custom-a71b8942e5802b15)
+
+running 1 test
+test custom_link_ops_and_adapter_round_trip ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s
+
+     Running tests/reclaimer.rs (target/miri/x86_64-unknown-linux-gnu/debug/build/concurrent-sharded-stack/9e403f1cc0eeb614/out/reclaimer-9e403f1cc0eeb614)
+
+running 4 tests
+test custom_backend_value_stack_preserves_borrowed_and_non_send_payloads ... ok
+test hazard_identity_is_untagged_link_not_container_and_other_nodes_progress ... ok
+test reference_hazard_backend_concurrent_transfer_and_reuse ... ok
+test retire_token_keeps_custom_domain_alive_and_callbacks_can_reinsert ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.99s
+

@@ -1,8 +1,6 @@
-#![cfg(feature = "intrusive")]
 //! A downstream-style custom link, independent of the upstream atomic layout.
-use concurrent_sharded_stack::{
-    ConcurrentLinkOps, EpochAdapter, IntrusiveShardedStack, intrusive, intrusive_collections,
-};
+use concurrent_sharded_stack::{IntrusiveShardedStack, intrusive, intrusive_collections};
+use intrusive_collections::singly_linked_list::SinglyLinkedListOps;
 use intrusive_collections::{DefaultLinkOps, LinkOps, intrusive_adapter};
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
@@ -19,21 +17,10 @@ impl DefaultLinkOps for Link {
     type Ops = Ops;
     const NEW: Ops = Ops;
 }
-// SAFETY: claiming is atomic and exclusive; release synchronizes reuse.
+// SAFETY: stateless operations on atomics; acquire/release synchronize reuse.
 unsafe impl LinkOps for Ops {
     type LinkPtr = NonNull<Link>;
     unsafe fn acquire_link(&mut self, p: Self::LinkPtr) -> bool {
-        unsafe { self.try_acquire(p) }
-    }
-    unsafe fn release_link(&mut self, p: Self::LinkPtr) {
-        unsafe { self.release(p) }
-    }
-}
-// SAFETY: all link accesses are atomic, operations are stateless, and methods
-// neither construct exclusive references nor panic. Pointers retain provenance.
-unsafe impl ConcurrentLinkOps for Ops {
-    type Link = Link;
-    unsafe fn try_acquire(&self, p: NonNull<Link>) -> bool {
         unsafe {
             p.as_ref()
                 .claimed
@@ -41,13 +28,15 @@ unsafe impl ConcurrentLinkOps for Ops {
                 .is_ok()
         }
     }
-    unsafe fn release(&self, p: NonNull<Link>) {
+    unsafe fn release_link(&mut self, p: Self::LinkPtr) {
         unsafe { p.as_ref().claimed.store(false, Ordering::Release) };
     }
-    unsafe fn load_next(&self, p: NonNull<Link>) -> Option<NonNull<Link>> {
+}
+unsafe impl SinglyLinkedListOps for Ops {
+    unsafe fn next(&self, p: NonNull<Link>) -> Option<NonNull<Link>> {
         unsafe { NonNull::new(p.as_ref().next.load(Ordering::Relaxed)) }
     }
-    unsafe fn store_next(&self, p: NonNull<Link>, next: Option<NonNull<Link>>) {
+    unsafe fn set_next(&mut self, p: NonNull<Link>, next: Option<NonNull<Link>>) {
         unsafe {
             p.as_ref().next.store(
                 next.map_or(std::ptr::null_mut(), NonNull::as_ptr),
@@ -62,11 +51,10 @@ struct Node {
 }
 intrusive_adapter!(CustomAdapter = Box<Node>: Node { link => Link });
 // SAFETY: stateless generated adapter, with Box preserving the allocation.
-unsafe impl EpochAdapter for CustomAdapter {}
 
 #[test]
 fn custom_link_ops_and_adapter_round_trip() {
-    let stack = IntrusiveShardedStack::with_concurrency(1, CustomAdapter::new());
+    let stack = unsafe { IntrusiveShardedStack::with_concurrency(1, CustomAdapter::new()) };
     let node = Box::new(Node {
         link: Link::default(),
         id: 7,

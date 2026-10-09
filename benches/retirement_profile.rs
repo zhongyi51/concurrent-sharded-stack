@@ -1,7 +1,7 @@
 //! Allocation profiling, separate from throughput benchmarks. No external profiler needed.
 //! Preallocate payloads, then count allocation requests in each ownership phase.
 use concurrent_sharded_stack::{
-    ConcurrentShardedStack, EpochAdapter, IntrusiveShardedStack, intrusive, intrusive_collections,
+    ConcurrentShardedStack, IntrusiveShardedStack, intrusive, intrusive_collections,
 };
 use intrusive_collections::{SinglyLinkedListAtomicLink, intrusive_adapter};
 use std::alloc::{GlobalAlloc, Layout, System};
@@ -67,8 +67,6 @@ struct Node {
     id: usize,
 }
 intrusive_adapter!(NodeAdapter = Box<Node>: Node { link => SinglyLinkedListAtomicLink });
-// SAFETY: generated stateless Box adapter with a stable atomic link.
-unsafe impl EpochAdapter for NodeAdapter {}
 
 fn measure(label: &str, run: impl FnOnce()) -> Counts {
     COUNTS.set(Some(Counts::default()));
@@ -120,7 +118,7 @@ fn main() {
             }
         });
     } else {
-        let stack = IntrusiveShardedStack::with_concurrency(1, NodeAdapter::new());
+        let stack = unsafe { IntrusiveShardedStack::with_concurrency(1, NodeAdapter::new()) };
         let push_counts = measure("push", || {
             for node in nodes {
                 stack.push(node).unwrap();

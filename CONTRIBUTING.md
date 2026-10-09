@@ -22,18 +22,21 @@ cargo run --example intrusive_recycling
 
 Tests are grouped as follows:
 
-- `src/tests/value.rs`: original value-stack behavior, deterministic scan/close
+- `src/tests/value.rs`: value facade and shared-core behavior, deterministic scan/close
   interleavings, concurrent transfer, drop and panic cleanup.
 - `tests/intrusive.rs`: retired-node ownership, cross-thread delivery, delayed
   link release, duplicate rejection, reuse, unique IDs, close and drop races.
-- `tests/intrusive_custom.rs`: a user-defined link and trait implementation.
+- `tests/intrusive_custom.rs`: a custom atomic link using upstream traits.
+- `tests/reclaimer.rs`: independent address protection, domain lifetime,
+  immediate reclamation, callback reinsertion, and borrowed/non-Send payloads.
+- `src/value.rs`: cache reuse, old-reader exclusion, capacity, and layout checks.
 - Rustdoc: working API examples and compile-fail tests for missing contracts.
 
 Unsafe changes need an invariant explanation and targeted interleaving tests.
 Use the flags in CI for Miri:
 
 ```sh
-MIRIFLAGS="-Zmiri-tree-borrows -Zmiri-permissive-provenance -Zmiri-disable-isolation -Zmiri-ignore-leaks" cargo +nightly miri test --lib --test intrusive --test intrusive_custom
+MIRIFLAGS="-Zmiri-tree-borrows -Zmiri-permissive-provenance -Zmiri-disable-isolation -Zmiri-ignore-leaks" cargo +nightly miri test --lib --test intrusive --test intrusive_custom --test reclaimer
 ```
 
 The global epoch collector can retain internal allocations at process exit, so
@@ -51,6 +54,7 @@ cargo bench --bench intrusive_bench
 cargo bench --bench retirement_profile -- intrusive
 cargo bench --bench retirement_profile -- eager
 cargo bench --bench retirement_profile -- value
+cargo bench --bench cache_profile
 ```
 
 Record environment, commands, raw results, payloads, workers/shards and what is

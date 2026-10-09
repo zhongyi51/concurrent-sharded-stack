@@ -1,0 +1,13 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.03s
+     Running tests/reclaimer.rs (target/miri/x86_64-unknown-linux-gnu/debug/build/concurrent-sharded-stack/9e403f1cc0eeb614/out/reclaimer-9e403f1cc0eeb614)
+
+running 6 tests
+test custom_backend_value_stack_preserves_borrowed_and_non_send_payloads ... ok
+test hazard_identity_is_untagged_link_not_container_and_other_nodes_progress ... ok
+test panicking_callback_releases_link_and_ownership_once ... ok
+test reference_hazard_backend_concurrent_transfer_and_reuse ... ok
+test retire_token_keeps_custom_domain_alive_and_callbacks_can_reinsert ... ok
+test send_but_not_sync_values_can_cross_threads ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.39s
+

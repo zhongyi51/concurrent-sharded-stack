@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.0 — unreleased
+
+- Share one intrusive core between both public stacks.
+- Add one `Reclaimer` trait (`pin`, `protect`, `retire`, `collect`) and isolate
+  default Crossbeam EBR in its backend module.
+- Reuse safely reclaimed empty value nodes in bounded per-shard caches; retain
+  immediate payload delivery and support for borrowed/non-Send local values.
+- Breaking intrusive API: remove `EpochAdapter`, `ConcurrentLinkOps`, and
+  `Default`; use upstream traits and an unsafe constructor contract instead.
+- `intrusive` is now a compatibility feature flag; the shared core always uses
+  intrusive-collections. Add custom-domain/address-protection and cache tests.
+
 ## 0.3.1 — 2026-10-08
 
 - Batch intrusive retirement instead of flushing an epoch bag for every node.

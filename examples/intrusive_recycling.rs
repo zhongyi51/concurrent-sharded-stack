@@ -1,6 +1,4 @@
-use concurrent_sharded_stack::{
-    EpochAdapter, IntrusiveShardedStack, intrusive, intrusive_collections,
-};
+use concurrent_sharded_stack::{IntrusiveShardedStack, intrusive, intrusive_collections};
 use intrusive_collections::{SinglyLinkedListAtomicLink, intrusive_adapter};
 use std::sync::mpsc::{self, TryRecvError};
 use std::time::{Duration, Instant};
@@ -13,9 +11,8 @@ struct Buffer {
 intrusive_adapter!(BufferAdapter = Box<Buffer>: Buffer { link => SinglyLinkedListAtomicLink });
 // SAFETY: generated stateless adapter and Box keep this atomic-linked node
 // alive at a stable address until the collector restores its owning pointer.
-unsafe impl EpochAdapter for BufferAdapter {}
 fn main() {
-    let pool = IntrusiveShardedStack::with_concurrency(4, BufferAdapter::new());
+    let pool = unsafe { IntrusiveShardedStack::with_concurrency(4, BufferAdapter::new()) };
     pool.push(Box::new(Buffer {
         link: SinglyLinkedListAtomicLink::new(),
         bytes: Vec::with_capacity(256),
