@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.0 — 2026-10-09
+
+- Delegate the ordinary value stack to concurrent-intrusive-collections 0.3.
+- Preserve owned push/pop, per-shard LIFO, close/drain, and synchronous payload
+  cleanup after one destructor panic. Values require `Send + 'static`, not Sync.
+- Breaking: remove all public intrusive stacks, adapters, Retired tokens, the
+  intrusive feature and intrusive-collections dependency. Use the new crate
+  directly for intrusive collections.
+- Breaking: payloads now require `Send + 'static`; PopError comes from the shared core.
+- Test non-Sync payload transfer, exact-once ownership, concurrent unique IDs,
+  rejection, deferred empty-node reclamation and panic cleanup.
+
 ## 0.3.1 — 2026-10-08
 
 - Batch intrusive retirement instead of flushing an epoch bag for every node.

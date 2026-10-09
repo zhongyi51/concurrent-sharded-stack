@@ -2,99 +2,71 @@ name: CI
 
 on:
   push:
-    branches: [main, master]
+    branches: [main]
   pull_request:
+  workflow_dispatch:
+  workflow_call:
 
-env:
-  CARGO_TERM_COLOR: always
-  RUSTFLAGS: -D warnings
+permissions:
+  contents: read
 
 jobs:
   test:
-    name: Test (${{ matrix.os }})
+    name: Test (${{ matrix.os }}, ${{ matrix.rust }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - { os: ubuntu-latest, rust: stable }
+          - { os: windows-latest, rust: stable }
+          - { os: macos-latest, rust: stable }
+          - { os: ubuntu-latest, rust: '1.85.0' }
     steps:
-      - uses: actions/checkout@v4
-      - name: Install stable toolchain
-        uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - name: Build
-        run: cargo build --all-targets --verbose
-      - name: Test
-        run: cargo test --all-targets --verbose
-      - name: Doc tests
-        run: cargo test --doc --verbose
-      - name: Without intrusive support
-        run: |
-          cargo test --all-targets --no-default-features
-          cargo test --doc --no-default-features
-
-  msrv:
-    name: MSRV (1.85)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.85.0
-      - uses: Swatinem/rust-cache@v2
-      - run: |
-          cargo check --lib
-          cargo check --lib --no-default-features
-
-  fmt:
-    name: Rustfmt
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          components: rustfmt
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f
+        with:
+          toolchain: ${{ matrix.rust }}
+      - run: cargo test --locked --all-features
+      - run: cargo test --locked --release --all-features
+      - run: cargo check --locked --all-targets --all-features
+      - run: cargo run --locked --example buffer_recycling
+
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
       - run: cargo fmt --all -- --check
-
-  clippy:
-    name: Clippy
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
-      - uses: Swatinem/rust-cache@v2
-      - run: |
-          cargo clippy --all-targets --all-features -- -D warnings
-          cargo clippy --all-targets --no-default-features -- -D warnings
-
-  docs:
-    name: Doc build
-    runs-on: ubuntu-latest
-    env:
-      RUSTDOCFLAGS: -D warnings
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo doc --no-deps --all-features
+      - run: python .github/scripts/check_text.py
+      - run: cargo clippy --locked --all-targets --all-features -- -D warnings
+      - run: cargo doc --locked --no-deps --all-features
+        env:
+          RUSTDOCFLAGS: -D warnings
+      - run: cargo package --locked
 
   miri:
-    name: Miri
     runs-on: ubuntu-latest
-    env:
-      # crossbeam-epoch's internals trip the default Stacked Borrows model, so
-      # run Miri under the Tree Borrows aliasing model instead. Epoch-based
-      # reclamation legitimately leaves deferred garbage uncollected at process
-      # exit, so leak checking is disabled (this is not a bug in our code).
-      MIRIFLAGS: -Zmiri-tree-borrows -Zmiri-permissive-provenance -Zmiri-disable-isolation -Zmiri-ignore-leaks
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - name: Install nightly + Miri
-        uses: dtolnay/rust-toolchain@nightly
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f
+        with:
+          toolchain: nightly-2026-01-30
           components: miri
-      - uses: Swatinem/rust-cache@v2
-      - name: Run Miri
-        run: cargo miri test --lib
-      - name: Intrusive ownership and custom trait tests
-        run: cargo miri test --test intrusive --test intrusive_custom
+      - run: cargo miri setup
+      - run: cargo miri test --locked --lib -- --test-threads=1
+        env:
+          # See README: upstream collector baseline requires these options.
+          MIRIFLAGS: -Zmiri-tree-borrows -Zmiri-ignore-leaks

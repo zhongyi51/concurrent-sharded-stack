@@ -1,124 +1,130 @@
 use super::*;
-use std::sync::atomic::{AtomicBool, AtomicUsize};
-use std::sync::{Arc, mpsc};
+use concurrent_intrusive_collections::epoch;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, AtomicUsize, Ordering},
+};
 use std::time::{Duration, Instant};
 
-// One-shot, per-thread hooks expose deterministic interleavings without
-// adding any instructions to non-test builds.
-type TestHook = Box<dyn FnOnce()>;
-thread_local! {
-    static AFTER_EMPTY_SHARD: Cell<Option<TestHook>> = const { Cell::new(None) };
-    static AFTER_SHARD_CLOSED: Cell<Option<TestHook>> = const { Cell::new(None) };
-}
-
-pub(super) fn after_empty_shard_scan() {
-    AFTER_EMPTY_SHARD.with(|hook| {
-        if let Some(hook) = hook.take() {
-            hook();
-        }
-    });
-}
-
-pub(super) fn after_shard_closed() {
-    AFTER_SHARD_CLOSED.with(|hook| {
-        if let Some(hook) = hook.take() {
-            hook();
-        }
-    });
+#[test]
+fn send_but_not_sync_payloads_can_cross_threads() {
+    use std::cell::Cell;
+    fn send_sync<T: Send + Sync>() {}
+    send_sync::<ConcurrentShardedStack<Cell<usize>>>();
+    let stack = Arc::new(ConcurrentShardedStack::with_concurrency(4));
+    let producer = Arc::clone(&stack);
+    std::thread::spawn(move || producer.push(Cell::new(42)).unwrap())
+        .join()
+        .unwrap();
+    let value = stack.pop().unwrap();
+    value.set(43);
+    assert_eq!(value.get(), 43);
 }
 
 #[test]
-fn empty_scan_is_not_a_global_snapshot() {
-    let s = Arc::new(ConcurrentShardedStack::with_concurrency(2));
-    THREAD_ID.with(|id| id.set(1));
-    s.push("original").unwrap();
-
-    let (scanned_tx, scanned_rx) = mpsc::channel();
-    let (resume_tx, resume_rx) = mpsc::channel();
-    let stack = Arc::clone(&s);
-    let popper = thread::spawn(move || {
-        THREAD_ID.with(|id| id.set(0));
-        AFTER_EMPTY_SHARD.with(|hook| {
-            hook.set(Some(Box::new(move || {
-                scanned_tx.send(()).unwrap();
-                resume_rx.recv().unwrap();
-            })));
-        });
-        stack.pop()
-    });
-
-    scanned_rx.recv_timeout(Duration::from_secs(30)).unwrap();
-    THREAD_ID.with(|id| id.set(0));
-    s.push("replacement").unwrap();
-    THREAD_ID.with(|id| id.set(1));
-    assert_eq!(s.pop(), Ok("original"));
-    // At least one item has existed throughout the pending pop.
-    resume_tx.send(()).unwrap();
-    assert_eq!(popper.join().unwrap(), Err(PopError::Empty));
-    assert_eq!(s.pop(), Ok("replacement"));
-}
-
-#[test]
-fn close_propagates_per_shard_and_can_have_multiple_winners() {
-    let s = Arc::new(ConcurrentShardedStack::with_concurrency(2));
-    let (closed_tx, closed_rx) = mpsc::channel();
-    let (resume_tx, resume_rx) = mpsc::channel();
-    let stack = Arc::clone(&s);
-    let closer = thread::spawn(move || {
-        AFTER_SHARD_CLOSED.with(|hook| {
-            hook.set(Some(Box::new(move || {
-                closed_tx.send(()).unwrap();
-                resume_rx.recv().unwrap();
-            })));
-        });
-        stack.close()
-    });
-
-    closed_rx.recv_timeout(Duration::from_secs(30)).unwrap();
-    THREAD_ID.with(|id| id.set(0));
-    assert_eq!(s.push(1), Err(PushError::Closed(1)));
-    assert!(!s.is_closed());
-    THREAD_ID.with(|id| id.set(1));
-    assert_eq!(s.push(2), Ok(()));
-    assert!(s.close());
-    assert!(s.is_closed());
-    resume_tx.send(()).unwrap();
-    assert!(closer.join().unwrap());
-    assert_eq!(s.pop(), Ok(2));
-    assert_eq!(s.pop(), Err(PopError::Closed));
-}
-
-#[test]
-fn payload_panic_still_drops_remaining_nodes_and_shards() {
+fn payload_panic_still_drops_every_remaining_value() {
     use std::panic::{AssertUnwindSafe, catch_unwind};
-
     struct Payload {
-        panic: bool,
-        drops: Arc<AtomicUsize>,
+        id: usize,
+        drops: Arc<Vec<AtomicUsize>>,
     }
     impl Drop for Payload {
         fn drop(&mut self) {
-            self.drops.fetch_add(1, Ordering::Relaxed);
-            assert!(!self.panic, "payload destructor panic");
+            assert_eq!(self.drops[self.id].fetch_add(1, Ordering::Relaxed), 0);
+            assert_ne!(self.id, 4, "payload destructor panic");
         }
     }
+    let drops = Arc::new((0..12).map(|_| AtomicUsize::new(0)).collect::<Vec<_>>());
+    let stack = ConcurrentShardedStack::with_concurrency(4);
+    std::thread::scope(|scope| {
+        for worker in 0..4 {
+            let (stack, drops) = (&stack, &drops);
+            scope.spawn(move || {
+                for id in worker * 3..worker * 3 + 3 {
+                    assert!(
+                        stack
+                            .push(Payload {
+                                id,
+                                drops: Arc::clone(drops)
+                            })
+                            .is_ok()
+                    );
+                }
+            });
+        }
+    });
+    let pinned = epoch::pin();
+    assert!(catch_unwind(AssertUnwindSafe(|| drop(stack))).is_err());
+    assert!(drops.iter().all(|n| n.load(Ordering::Relaxed) == 1));
+    drop(pinned);
+}
 
-    for first_shard in [0, 2] {
-        let drops = Arc::new(AtomicUsize::new(0));
-        let s = ConcurrentShardedStack::with_concurrency(4);
-        for (shard, panic) in [(first_shard, false), (first_shard, true), (3, false)] {
-            THREAD_ID.with(|id| id.set(shard));
-            assert!(
-                s.push(Payload {
-                    panic,
-                    drops: Arc::clone(&drops)
-                })
-                .is_ok()
-            );
+#[test]
+fn mpmc_transfers_each_non_sync_value_exactly_once() {
+    use std::cell::Cell;
+    let count = if cfg!(miri) { 16 } else { 2000 };
+    let stack = Arc::new(ConcurrentShardedStack::with_concurrency(8));
+    let seen = Arc::new(
+        (0..count * 4)
+            .map(|_| AtomicUsize::new(0))
+            .collect::<Vec<_>>(),
+    );
+    let readers = (0..4)
+        .map(|_| {
+            let (stack, seen) = (Arc::clone(&stack), Arc::clone(&seen));
+            std::thread::spawn(move || {
+                loop {
+                    match stack.pop() {
+                        Ok(value) => {
+                            let value: Cell<usize> = value;
+                            assert_eq!(seen[value.get()].fetch_add(1, Ordering::Relaxed), 0);
+                        }
+                        Err(PopError::Empty) => std::thread::yield_now(),
+                        Err(PopError::Closed) => break,
+                    }
+                }
+            })
+        })
+        .collect::<Vec<_>>();
+    std::thread::scope(|scope| {
+        for worker in 0..4 {
+            let stack = &stack;
+            scope.spawn(move || {
+                for id in worker * count..(worker + 1) * count {
+                    stack.push(Cell::new(id)).unwrap();
+                }
+            });
         }
-        assert!(catch_unwind(AssertUnwindSafe(|| drop(s))).is_err());
-        assert_eq!(drops.load(Ordering::Relaxed), 3);
+    });
+    stack.close();
+    for reader in readers {
+        reader.join().unwrap();
     }
+    assert!(seen.iter().all(|n| n.load(Ordering::Relaxed) == 1));
+}
+
+#[test]
+fn rejected_and_popped_payloads_are_not_dropped_by_retirement() {
+    let drops = Arc::new(AtomicUsize::new(0));
+    let stack = ConcurrentShardedStack::with_concurrency(1);
+    let guard = epoch::pin();
+    stack.push(DropCounter::new(Arc::clone(&drops))).unwrap();
+    let popped = stack.pop().unwrap();
+    stack.close();
+    let rejected = stack
+        .push(DropCounter::new(Arc::clone(&drops)))
+        .unwrap_err()
+        .into_inner();
+    drop(stack);
+    assert_eq!(drops.load(Ordering::Relaxed), 0);
+    drop(popped);
+    drop(rejected);
+    assert_eq!(drops.load(Ordering::Relaxed), 2);
+    drop(guard);
+    for _ in 0..256 {
+        epoch::pin().flush();
+    }
+    assert_eq!(drops.load(Ordering::Relaxed), 2);
 }
 
 #[derive(Debug)]

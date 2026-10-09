@@ -1,65 +1,40 @@
 # Contributing
 
-Include a reproducer, Rust/crate versions, OS/CPU, shard and worker counts, and
-how producers finish. `Empty` alone is not a completion signal. For intrusive
-nodes, distinguish removal from eventual callback delivery.
-
-## Checks
+The public crate contains only the ordinary value stack. Its shard algorithm
+lives in concurrent-intrusive-collections; fixes to link updates belong there.
+Describe ownership and aliasing invariants when changing the private payload
+wrapper. Preserve Send-but-not-Sync payloads and synchronous Drop behavior.
 
 ```sh
 cargo fmt --all -- --check
-cargo test --all-targets
-cargo test --doc
-cargo test --all-targets --no-default-features
-cargo test --doc --no-default-features
-cargo clippy --all-targets --all-features -- -D warnings
-cargo clippy --all-targets --no-default-features -- -D warnings
-cargo +1.85.0 check --lib
-cargo +1.85.0 check --lib --no-default-features
-cargo run --example buffer_recycling
-cargo run --example intrusive_recycling
+cargo test --locked
+cargo test --locked --release
+cargo check --locked --all-targets
+cargo clippy --locked --all-targets -- -D warnings
+cargo doc --locked --no-deps
+cargo +1.85.0 test --locked
+cargo run --locked --example buffer_recycling
+cargo package --locked
 ```
 
-Tests are grouped as follows:
+Do not use `cargo test --all-targets`: the harness-free benchmark runs full
+workloads. Compile it with `cargo check --all-targets`, and run it separately.
 
-- `src/tests/value.rs`: original value-stack behavior, deterministic scan/close
-  interleavings, concurrent transfer, drop and panic cleanup.
-- `tests/intrusive.rs`: retired-node ownership, cross-thread delivery, delayed
-  link release, duplicate rejection, reuse, unique IDs, close and drop races.
-- `tests/intrusive_custom.rs`: a user-defined link and trait implementation.
-- Rustdoc: working API examples and compile-fail tests for missing contracts.
-
-Unsafe changes need an invariant explanation and targeted interleaving tests.
-Use the flags in CI for Miri:
+Miri uses the documented Crossbeam compatibility options:
 
 ```sh
-MIRIFLAGS="-Zmiri-tree-borrows -Zmiri-permissive-provenance -Zmiri-disable-isolation -Zmiri-ignore-leaks" cargo +nightly miri test --lib --test intrusive --test intrusive_custom
+MIRIFLAGS="-Zmiri-tree-borrows -Zmiri-ignore-leaks" cargo +nightly miri test --lib -- --test-threads=1
 ```
 
-The global epoch collector can retain internal allocations at process exit, so
-Miri's process-exit leak check is disabled. Tests explicitly verify node drop
-counts and callback completion instead. Miri and stress tests are useful checks,
-not a proof of correctness.
+The global collector's baseline reproduces process-exit retained allocations
+and Stacked Borrows issues; these options are not a claim that arbitrary leaks
+are safe. Tests count payload destruction and exact IDs. Stress tests and Miri
+are evidence, not formal proofs. Legacy hardware race stress can be skipped by
+Miri where explicitly annotated.
 
-## Benchmarks
+Run `cargo bench --bench stack_bench` on an idle machine. Historical measurements
+in docs/benchmarks used prior implementations; do not present them as 0.4 results.
 
-Run on an otherwise idle host, separately from builds/tests:
-
-```sh
-cargo bench --bench stack_bench
-cargo bench --bench intrusive_bench
-cargo bench --bench retirement_profile -- intrusive
-cargo bench --bench retirement_profile -- eager
-cargo bench --bench retirement_profile -- value
-```
-
-Record environment, commands, raw results, payloads, workers/shards and what is
-timed. The intrusive harness counts **completed** cycles/transfers, including
-epoch callbacks. Retiring a node is not completed delivery. Retain slower
-results, and distinguish allocation, synchronization and reclamation costs.
-
-`retirement_profile` counts allocator requests separately from timing. It
-preallocates payloads and keeps an old epoch reader pinned while measuring
-enqueue costs. `eager` reproduces the former per-node flush policy; `intrusive`
-checks that retirement allocations are amortized. Its final delivery phase is
-not a complete collector drain or a peak-memory measurement.
+Before release, update version/changelog, push, and wait for CI on that commit.
+Run `cargo publish --dry-run --locked` from a clean checkout, publish, and verify
+the registry archive against the commit before creating the matching version tag.

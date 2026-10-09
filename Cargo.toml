@@ -1,27 +1,24 @@
 [package]
 name = "concurrent-sharded-stack"
-version = "0.3.1"
+version = "0.4.0"
 edition = "2024"
 rust-version = "1.85"
-description = "Lock-free sharded stacks with epoch reclamation and optional intrusive node storage."
+description = "A value-owning sharded concurrent stack backed by concurrent-intrusive-collections."
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/zhongyi51/concurrent-sharded-stack"
 readme = "README.md"
 keywords = ["concurrent", "lock-free", "stack", "sharded", "treiber"]
 categories = ["concurrency", "data-structures"]
 publish = ["crates-io"]
-
-[features]
-default = ["intrusive"]
-intrusive = ["dep:intrusive-collections"]
+documentation = "https://docs.rs/concurrent-sharded-stack"
+include = ["/src/**", "/examples/**", "/benches/stack_bench.rs", "/Cargo.toml", "/Cargo.lock", "/README.md", "/CHANGELOG.md", "/LICENSE-MIT", "/LICENSE-APACHE"]
 
 [dependencies]
-crossbeam-epoch = "0.9"
-crossbeam-utils = "0.8"
-intrusive-collections = { version = "0.10.3", optional = true }
+concurrent-intrusive-collections = "0.3"
 scopeguard = "1.2"
 
 [dev-dependencies]
+crossbeam-utils = "0.8.7"
 criterion = "0.5"
 crossbeam-queue = "0.3"
 lockfree = "0.5"
@@ -29,20 +26,6 @@ lockfree = "0.5"
 [[bench]]
 name = "stack_bench"
 harness = false
-
-[[bench]]
-name = "intrusive_bench"
-harness = false
-required-features = ["intrusive"]
-
-[[example]]
-name = "intrusive_recycling"
-required-features = ["intrusive"]
-
-[[bench]]
-name = "retirement_profile"
-harness = false
-required-features = ["intrusive"]
 
 # Profiling-friendly release build: keep full debuginfo so VTune (or any other
 # sampling profiler) can resolve symbols and inline frames, without disabling
