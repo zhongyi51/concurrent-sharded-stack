@@ -1,6 +1,6 @@
 [package]
 name = "concurrent-sharded-stack"
-version = "0.4.0"
+version = "0.4.1"
 edition = "2024"
 rust-version = "1.85"
 description = "A value-owning sharded concurrent stack backed by concurrent-intrusive-collections."
@@ -14,7 +14,7 @@ documentation = "https://docs.rs/concurrent-sharded-stack"
 include = ["/src/**", "/tests/**", "/examples/**", "/benches/*.rs", "/Cargo.toml", "/Cargo.lock", "/README.md", "/CHANGELOG.md", "/LICENSE-MIT", "/LICENSE-APACHE"]
 
 [dependencies]
-concurrent-intrusive-collections = "0.3"
+concurrent-intrusive-collections = "0.3.1"
 scopeguard = "1.2"
 
 [dev-dependencies]

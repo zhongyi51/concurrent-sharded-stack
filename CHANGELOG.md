@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.4.1 — 2026-11-14
 
+- Require concurrent-intrusive-collections 0.3.1 for panic-safe node cleanup.
 - Add a bounded worker-cache example with ownership and unwind tests.
 - Add persistent-worker benchmarks, sampled latency and separate allocation counts.
 

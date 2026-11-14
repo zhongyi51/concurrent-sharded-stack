@@ -101,9 +101,9 @@ checksum = "1c133bc6a41be0d194c306b5506d15e6feeea7b1d6604bd3f8310dfb2ca96486"
 
 [[package]]
 name = "concurrent-intrusive-collections"
-version = "0.3.0"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cbad8c105c4be14d1ab74af30c01bab728ae1e5d1ff84bd138aae51897a2bd6b"
+checksum = "f79c539eb9e68b4c98eb01f997811eb865a28c4b2afb6538595affdead3a2fd0"
 dependencies = [
  "crossbeam-epoch",
  "crossbeam-utils",
@@ -111,7 +111,7 @@ dependencies = [
 
 [[package]]
 name = "concurrent-sharded-stack"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "concurrent-intrusive-collections",
  "criterion",
