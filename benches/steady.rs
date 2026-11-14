@@ -8,7 +8,7 @@ use std::{
     alloc::{GlobalAlloc, Layout, System},
     hint::black_box,
     sync::{
-        Arc, Barrier,
+        Barrier,
         atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     time::{Duration, Instant},
@@ -37,7 +37,6 @@ unsafe impl GlobalAlloc for CountAlloc {
 #[global_allocator]
 static ALLOCATOR: CountAlloc = CountAlloc;
 
-#[derive(Clone)]
 struct Config {
     mode: String,
     workers: usize,
@@ -104,7 +103,7 @@ fn main() {
     if config.mode == "mpmc" {
         assert!(config.producers > 0 && config.producers < config.workers);
     }
-    let pool = Arc::new(ConcurrentShardedStack::with_concurrency(config.shards));
+    let pool = ConcurrentShardedStack::with_concurrency(config.shards);
     let pool_size = if config.mode == "shared" || config.mode == "cached" {
         config.workers * 8
     } else {
