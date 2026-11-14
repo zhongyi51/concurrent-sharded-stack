@@ -11,7 +11,7 @@ keywords = ["concurrent", "lock-free", "stack", "sharded", "treiber"]
 categories = ["concurrency", "data-structures"]
 publish = ["crates-io"]
 documentation = "https://docs.rs/concurrent-sharded-stack"
-include = ["/src/**", "/examples/**", "/benches/stack_bench.rs", "/Cargo.toml", "/Cargo.lock", "/README.md", "/CHANGELOG.md", "/LICENSE-MIT", "/LICENSE-APACHE"]
+include = ["/src/**", "/tests/**", "/examples/**", "/benches/*.rs", "/Cargo.toml", "/Cargo.lock", "/README.md", "/CHANGELOG.md", "/LICENSE-MIT", "/LICENSE-APACHE"]
 
 [dependencies]
 concurrent-intrusive-collections = "0.3"
@@ -25,6 +25,10 @@ lockfree = "0.5"
 
 [[bench]]
 name = "stack_bench"
+harness = false
+
+[[bench]]
+name = "steady"
 harness = false
 
 # Profiling-friendly release build: keep full debuginfo so VTune (or any other

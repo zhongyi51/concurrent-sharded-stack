@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Add a bounded worker-cache example with ownership and unwind tests.
+- Add persistent-worker benchmarks, sampled latency and separate allocation counts.
+
 ## 0.4.0 — 2026-10-09
 
 - Delegate the ordinary value stack to concurrent-intrusive-collections 0.3.

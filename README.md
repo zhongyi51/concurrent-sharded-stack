@@ -79,3 +79,48 @@ are historical measurements of earlier releases, not performance claims for 0.4.
 See [CONTRIBUTING.md](https://github.com/zhongyi51/concurrent-sharded-stack/blob/main/CONTRIBUTING.md)
 for validation commands and [CHANGELOG.md](https://github.com/zhongyi51/concurrent-sharded-stack/blob/main/CHANGELOG.md)
 for release history. Licensed under MIT OR Apache-2.0.
+
+
+## Optional worker-local object reuse
+
+`cargo run --example cached_buffer_recycling` demonstrates bounded payload caches
+using the existing safe value API. Each worker caches at most four buffers and
+flushes every 64 requests and on exit. All workers join and return caches before
+the owner closes the pool. The final check verifies every original buffer ID.
+
+This example intentionally keeps its policy outside the public stack API. A
+cached return is not yet visible to other workers. The policy needs enough spare
+objects, is not suitable for work queues or scarce resources requiring fairness,
+and provides no wall-clock fairness bound. A cache dropped after early close
+destroys rejected payloads. `flush` returns ownership of its first rejected value;
+remaining cached values stay owned by the cache. Nodes are never reused before
+an epoch grace period; only independently owned payloads are reused.
+
+## Steady-state measurements
+
+Compile `cargo bench --bench steady --no-run`, then run the resulting executable:
+
+```text
+steady --mode shared --workers 4 --shards 4 --bytes 256 --ops 200000 --samples 9
+steady --mode cached --workers 4 --shards 4 --bytes 256 --ops 200000 --samples 9
+steady --mode shared --workers 4 --shards 4 --count
+steady --mode cached --workers 4 --shards 4 --count
+steady --mode empty --workers 4 --shards 32
+steady --mode mpmc --workers 8 --producers 1 --shards 8 --bytes 256
+```
+
+Workers persist across samples; collector registration, pool creation and payload
+preallocation are outside timing. One full warmup is discarded. End-of-sample
+cache flush is timed. MPMC counts each transferred value once; object-pool modes
+count a take/return pair once. MPMC payload destruction is timed. Exact ID checks
+are outside timing. Failed shared pops yield and retry with a stall deadline.
+
+Latency is sampled every 997 operations (coprime to the cache flush period),
+and includes the sampled operation's bookkeeping. MPMC latency combines push
+and pop samples; it is not end-to-end queue latency. Allocation-counting mode
+adds shared counters and must be run separately from throughput comparisons.
+Counts include EBR metadata allocations triggered during the timed phase.
+Outstanding EBR memory is not a peak-RSS measurement. CPU affinity, frequency,
+and allocator state are uncontrolled; use paired/reversed-order repeats and
+report variation and regressions. The original Criterion benchmark is retained
+for end-to-end workloads including startup and teardown.

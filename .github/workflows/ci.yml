@@ -34,6 +34,7 @@ jobs:
       - run: cargo test --locked --release --all-features
       - run: cargo check --locked --all-targets --all-features
       - run: cargo run --locked --example buffer_recycling
+      - run: cargo run --locked --example cached_buffer_recycling
 
   quality:
     runs-on: ubuntu-latest
@@ -66,7 +67,7 @@ jobs:
           toolchain: nightly-2026-01-30
           components: miri
       - run: cargo miri setup
-      - run: cargo miri test --locked --lib -- --test-threads=1
+      - run: cargo miri test --locked --lib --test pool_cache -- --test-threads=1
         env:
           # See README: upstream collector baseline requires these options.
           MIRIFLAGS: -Zmiri-tree-borrows -Zmiri-ignore-leaks
